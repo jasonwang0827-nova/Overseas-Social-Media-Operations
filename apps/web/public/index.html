@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Social Ops Hub</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="mark">SO</div>
+        <div>
+          <strong>Social Ops Hub</strong>
+          <span>Lead Management</span>
+        </div>
+      </div>
+      <nav>
+        <button class="nav-item active" data-view="overview">总览</button>
+        <button class="nav-item" data-view="clients">客户</button>
+        <button class="nav-item" data-view="content">内容库</button>
+        <button class="nav-item" data-view="publish">发布队列</button>
+        <button class="nav-item" data-view="leads">线索</button>
+        <button class="nav-item" data-view="reports">报告</button>
+      </nav>
+    </aside>
+
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Overseas Social Media Operations</p>
+          <h1>客户运营与线索管理工作台</h1>
+        </div>
+        <div class="toolbar">
+          <select id="clientSelect" aria-label="Client">
+            <option value="client_study_001">client_study_001</option>
+          </select>
+          <button class="icon-button" id="refreshButton" title="刷新数据">↻</button>
+        </div>
+      </header>
+
+      <section id="app" class="workspace">
+        <div class="loading">正在读取本地 JSON 数据...</div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

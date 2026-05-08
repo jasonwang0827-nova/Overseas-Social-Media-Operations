@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Overseas Social Media Operations & Lead Management Hub MVP",
   "scripts": {
+    "web:dev": "tsx apps/web/server.ts",
     "client:create": "tsx apps/worker/cli.ts client:create",
     "account:add": "tsx apps/worker/cli.ts account:add",
     "content:add": "tsx apps/worker/cli.ts content:add",

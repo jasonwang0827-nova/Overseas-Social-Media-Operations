@@ -15,10 +15,36 @@ The first version uses local JSON files under `data/clients/<client_id>/` and mo
 ```bash
 npm install
 npm run demo:seed
+npm run web:dev
+```
+
+Open:
+
+```text
+http://localhost:4321
+```
+
+CLI flow:
+
+```bash
 npm run publish:run -- --client_id client_study_001
 npm run lead:score -- --client_id client_study_001
 npm run report:daily -- --client_id client_study_001
 ```
+
+## Web UI
+
+The MVP includes a local dashboard for checking:
+
+- Client profile
+- Platform accounts
+- Content assets
+- Platform variants
+- Publish queue and publish records
+- Lead pool, lead scoring, and reply drafts
+- Daily report preview
+
+The web server reads and writes the same JSON files under `data/clients/<client_id>/`.
 
 ## CLI Commands
 
