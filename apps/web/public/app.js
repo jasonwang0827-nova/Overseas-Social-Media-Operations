@@ -82,6 +82,7 @@ function renderOverview() {
           <button class="action-button" data-action="runPublish">运行发布队列</button>
           <button class="action-button secondary" data-action="scoreLeads">重新评分线索</button>
           <button class="action-button secondary" data-action="writeReport">生成日报</button>
+          <button class="action-button secondary" data-action="writeWeeklyReport">生成周报</button>
         </div>
       </section>
     </div>
@@ -200,7 +201,7 @@ function renderContent() {
     <section class="panel" style="margin-top:24px">
       <h2>平台版本</h2>
       <table class="table">
-        <thead><tr><th>平台</th><th>账号</th><th>格式</th><th>文案</th><th>状态</th></tr></thead>
+        <thead><tr><th>平台</th><th>账号</th><th>格式</th><th>文案</th><th>状态</th><th>操作</th></tr></thead>
         <tbody>
           ${variants.map((variant) => `
             <tr>
@@ -209,6 +210,7 @@ function renderContent() {
               <td>${escapeHtml(variant.format)}</td>
               <td>${escapeHtml(variant.caption)}</td>
               <td>${status(variant.status)}</td>
+              <td>${variant.approval_status === "approved" ? "已批准" : `<button class="action-button secondary" data-action="approveVariant" data-variant-id="${escapeHtml(variant.variant_id)}">批准版本</button>`}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -282,6 +284,7 @@ function renderReports() {
     <section class="panel">
       <div class="inline-actions">
         <button class="action-button" data-action="writeReport">生成今日报告</button>
+        <button class="action-button secondary" data-action="writeWeeklyReport">生成本周报告</button>
       </div>
       <h2>日报预览</h2>
       <table class="table">
@@ -319,8 +322,14 @@ function bindViewEvents() {
   document.querySelectorAll("[data-action='writeReport']").forEach((button) => {
     button.addEventListener("click", () => postJson("/api/report/daily", { client_id: state.clientId }));
   });
+  document.querySelectorAll("[data-action='writeWeeklyReport']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/report/weekly", { client_id: state.clientId }));
+  });
   document.querySelectorAll("[data-action='approveContent']").forEach((button) => {
     button.addEventListener("click", () => postJson("/api/content/approve", { client_id: state.clientId, content_id: button.dataset.contentId }));
+  });
+  document.querySelectorAll("[data-action='approveVariant']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/variant/approve", { client_id: state.clientId, variant_id: button.dataset.variantId }));
   });
 
   const leadForm = document.querySelector("#leadForm");

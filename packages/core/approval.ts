@@ -12,6 +12,12 @@ export function assertPublishApproved(task: PublishTask): void {
   }
 }
 
+export function assertVariantApproved(variant: PlatformVariant): void {
+  if (variant.approval_status !== "approved" || variant.status !== "approved") {
+    throw new Error(`Platform variant ${variant.variant_id} is not approved.`);
+  }
+}
+
 export function assertVariantIsDifferentFromContent(variant: PlatformVariant, content: ContentAsset): void {
   if (variant.caption.trim() === `${content.hook}\n\n${content.cta}`.trim()) {
     throw new Error(`Variant ${variant.variant_id} is too close to the raw content asset.`);

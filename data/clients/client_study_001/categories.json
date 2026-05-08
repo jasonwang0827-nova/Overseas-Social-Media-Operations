@@ -29,6 +29,18 @@
       "骗子",
       "无聊",
       "别推给我"
+    ],
+    "recommended_platforms": [
+      "instagram",
+      "tiktok",
+      "facebook",
+      "x"
+    ],
+    "default_funnel_stages": [
+      "awareness",
+      "trust_building",
+      "lead_generation",
+      "conversion"
     ]
   },
   {
@@ -59,6 +71,17 @@
       "骗子",
       "无聊",
       "别推给我"
+    ],
+    "recommended_platforms": [
+      "instagram",
+      "facebook",
+      "tiktok"
+    ],
+    "default_funnel_stages": [
+      "awareness",
+      "trust_building",
+      "lead_generation",
+      "conversion"
     ]
   },
   {
@@ -87,6 +110,17 @@
       "骗子",
       "无聊",
       "别推给我"
+    ],
+    "recommended_platforms": [
+      "x",
+      "instagram",
+      "tiktok"
+    ],
+    "default_funnel_stages": [
+      "awareness",
+      "trust_building",
+      "lead_generation",
+      "conversion"
     ]
   },
   {
@@ -114,6 +148,17 @@
       "骗子",
       "无聊",
       "别推给我"
+    ],
+    "recommended_platforms": [
+      "facebook",
+      "instagram",
+      "tiktok"
+    ],
+    "default_funnel_stages": [
+      "awareness",
+      "trust_building",
+      "lead_generation",
+      "conversion"
     ]
   },
   {
@@ -142,6 +187,17 @@
       "骗子",
       "无聊",
       "别推给我"
+    ],
+    "recommended_platforms": [
+      "facebook",
+      "instagram",
+      "x"
+    ],
+    "default_funnel_stages": [
+      "awareness",
+      "trust_building",
+      "lead_generation",
+      "conversion"
     ]
   }
 ]

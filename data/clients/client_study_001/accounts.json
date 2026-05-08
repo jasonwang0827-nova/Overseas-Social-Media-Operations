@@ -11,7 +11,8 @@
     "content_role": "case_explainer",
     "status": "active",
     "auth_status": "mock",
-    "posting_enabled": true
+    "posting_enabled": true,
+    "platform_account_url": null
   },
   {
     "account_id": "tiktok_study_001",
@@ -25,7 +26,8 @@
     "content_role": "case_explainer",
     "status": "active",
     "auth_status": "mock",
-    "posting_enabled": true
+    "posting_enabled": true,
+    "platform_account_url": null
   },
   {
     "account_id": "facebook_study_001",
@@ -39,7 +41,8 @@
     "content_role": "case_explainer",
     "status": "active",
     "auth_status": "mock",
-    "posting_enabled": true
+    "posting_enabled": true,
+    "platform_account_url": null
   },
   {
     "account_id": "x_study_001",
@@ -53,6 +56,7 @@
     "content_role": "case_explainer",
     "status": "active",
     "auth_status": "mock",
-    "posting_enabled": true
+    "posting_enabled": true,
+    "platform_account_url": null
   }
 ]

@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readdir, readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import type { Client, ContentAsset, Lead, PlatformAccount, PlatformVariant, PublishRecord, PublishTask, ReplyDraft } from "../../packages/core/types.js";
+import { assertVariantApproved } from "../../packages/core/approval.js";
 import { categories, getCategory } from "../../packages/core/category.js";
 import { classifyIntent } from "../../packages/lead-intelligence/classifyIntent.js";
 import { generateReplyDraft } from "../../packages/lead-intelligence/generateReplyDraft.js";
@@ -62,6 +63,18 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/variant/approve") {
+    const body = await readBody<{ client_id: string; variant_id: string }>(req);
+    const variants = await readClientArray<PlatformVariant>(body.client_id, "platform-variants.json");
+    const variant = variants.find((item) => item.variant_id === body.variant_id);
+    if (!variant) throw new Error(`Variant ${body.variant_id} not found`);
+    variant.status = "approved";
+    variant.approval_status = "approved";
+    await writeClientArray(body.client_id, "platform-variants.json", variants);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/publish/run") {
     const body = await readBody<{ client_id: string }>(req);
     await runPublish(body.client_id);
@@ -86,6 +99,13 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
   if (req.method === "POST" && url.pathname === "/api/report/daily") {
     const body = await readBody<{ client_id: string }>(req);
     await writeDailyReport(body.client_id);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/report/weekly") {
+    const body = await readBody<{ client_id: string }>(req);
+    await writeWeeklyReport(body.client_id);
     sendJson(res, 200, await loadState(body.client_id));
     return;
   }
@@ -119,7 +139,7 @@ async function loadState(clientId: string) {
     summary: {
       active_accounts: accounts.filter((item) => item.status === "active").length,
       content_assets: contents.length,
-      ready_variants: variants.filter((item) => item.status === "ready_for_review").length,
+      ready_variants: variants.filter((item) => item.status === "ready_for_review" || item.status === "approved").length,
       scheduled_tasks: queue.filter((item) => item.status === "scheduled").length,
       published_tasks: queue.filter((item) => item.status === "published").length,
       high_score_leads: leads.filter((item) => item.lead_score >= 70).length
@@ -223,9 +243,11 @@ async function runPublish(clientId: string): Promise<void> {
 
   for (const task of queue) {
     if (task.status !== "scheduled" || new Date(task.scheduled_at) > now) continue;
+    if (task.next_retry_at && new Date(task.next_retry_at) > now) continue;
     if (task.approval_status !== "approved") {
       task.status = "failed";
       task.error_message = "approval_status must be approved before publishing";
+      task.last_error = task.error_message;
       continue;
     }
     if (task.platform === "youtube") {
@@ -237,15 +259,28 @@ async function runPublish(clientId: string): Promise<void> {
     if (!variant) {
       task.status = "failed";
       task.error_message = `Variant ${task.variant_id} was not found`;
+      task.last_error = task.error_message;
+      continue;
+    }
+    try {
+      assertVariantApproved(variant);
+    } catch (error) {
+      task.status = "failed";
+      task.error_message = error instanceof Error ? error.message : "variant must be approved before publishing";
+      task.last_error = task.error_message;
       continue;
     }
     const result = await createMockPublisher(task.platform).publish(task, variant);
-    task.status = result.ok ? "published" : "failed";
-    task.platform_post_id = result.platform_post_id;
-    task.published_at = result.ok ? new Date().toISOString() : null;
-    task.error_message = result.error_message;
-    if (result.ok && !records.some((record) => record.publish_task_id === task.publish_task_id)) {
+    if (result.ok) {
+      task.status = "published";
+      task.platform_post_id = result.platform_post_id;
+      task.published_at = new Date().toISOString();
+      task.error_message = null;
+      task.last_error = null;
+      task.next_retry_at = null;
       records.push({ ...task, record_id: makeId("record") });
+    } else {
+      registerPublishFailure(task, result.error_message ?? "Unknown publish error");
     }
   }
 
@@ -275,6 +310,10 @@ async function importLead(clientId: string, messageText: string, platform = "ins
     recommended_reply: "",
     human_review_required: true,
     assigned_to: "jason",
+    next_follow_up_at: null,
+    last_contacted_at: null,
+    contact_method: "unknown",
+    lead_notes: [],
     created_at: new Date().toISOString()
   };
   lead.recommended_reply = generateReplyDraft(client, lead);
@@ -309,12 +348,25 @@ async function upsertDraft(clientId: string, lead: Lead): Promise<void> {
       lead_id: lead.lead_id,
       client_id: clientId,
       draft_text: lead.recommended_reply,
-      approval_status: "pending",
+      approval_status: "draft",
       sent_status: "not_sent",
       created_at: new Date().toISOString()
     });
   }
   await writeClientArray(clientId, "reply-drafts.json", drafts);
+}
+
+function registerPublishFailure(task: PublishTask, message: string): void {
+  task.retry_count = (task.retry_count ?? 0) + 1;
+  task.error_message = message;
+  task.last_error = message;
+  if (task.retry_count < (task.max_retry ?? 3)) {
+    task.status = "scheduled";
+    task.next_retry_at = new Date(Date.now() + task.retry_count * 15 * 60 * 1000).toISOString();
+  } else {
+    task.status = "failed";
+    task.next_retry_at = null;
+  }
 }
 
 async function writeDailyReport(clientId: string): Promise<void> {
@@ -335,6 +387,54 @@ async function writeDailyReport(clientId: string): Promise<void> {
     }, {})
   };
   await writeJson(join(clientDir(clientId), "reports", "daily", `${date}.json`), report);
+}
+
+async function writeWeeklyReport(clientId: string): Promise<void> {
+  const state = await loadState(clientId);
+  const weekStart = startOfWeek(new Date()).toISOString().slice(0, 10);
+  const weekEnd = endOfWeek(new Date()).toISOString().slice(0, 10);
+  const inRange = (value: string | null): boolean => Boolean(value && value >= `${weekStart}T00:00:00` && value <= `${weekEnd}T23:59:59`);
+  const weeklyLeads = state.leads.filter((lead) => inRange(lead.created_at));
+  const weeklyRecords = state.records.filter((record) => inRange(record.published_at));
+  const report = {
+    client_id: clientId,
+    week_start: weekStart,
+    week_end: weekEnd,
+    published_count: weeklyRecords.length,
+    platform_publish_status: state.queue.reduce<Record<string, Record<string, number>>>((acc, task) => {
+      acc[task.platform] ??= {};
+      acc[task.platform][task.status] = (acc[task.platform][task.status] ?? 0) + 1;
+      return acc;
+    }, {}),
+    failed_tasks: state.queue.filter((task) => task.status === "failed"),
+    retry_pending_tasks: state.queue.filter((task) => task.next_retry_at),
+    new_leads: weeklyLeads.length,
+    high_value_leads: weeklyLeads.filter((lead) => lead.lead_score >= 70),
+    follow_up_required: weeklyLeads.filter((lead) => lead.human_review_required && lead.lead_stage !== "spam"),
+    top_content_themes: state.contents.reduce<Record<string, number>>((acc, content) => {
+      acc[content.content_theme] = (acc[content.content_theme] ?? 0) + 1;
+      return acc;
+    }, {}),
+    next_week_recommendations: [
+      "复用高意图线索对应的内容主题。",
+      "优先跟进高分线索并记录联系结果。",
+      "继续保持每个平台差异化版本发布。"
+    ]
+  };
+  await writeJson(join(clientDir(clientId), "reports", "weekly", `${weekStart}_${weekEnd}.json`), report);
+}
+
+function startOfWeek(date: Date): Date {
+  const result = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = result.getUTCDay() || 7;
+  result.setUTCDate(result.getUTCDate() - day + 1);
+  return result;
+}
+
+function endOfWeek(date: Date): Date {
+  const result = startOfWeek(date);
+  result.setUTCDate(result.getUTCDate() + 6);
+  return result;
 }
 
 async function serveStatic(res: ServerResponse, pathname: string): Promise<void> {

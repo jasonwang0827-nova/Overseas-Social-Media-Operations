@@ -1,7 +1,7 @@
 export type Platform = "facebook" | "instagram" | "tiktok" | "x" | "youtube";
 export type Status = "draft" | "ready_for_review" | "approved" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
-export type ApprovalStatus = "pending" | "approved" | "rejected";
-export type LeadStage = "new" | "qualified" | "replied" | "booked" | "converted" | "not_interested" | "spam";
+export type ApprovalStatus = "draft" | "ready_for_review" | "approved" | "rejected";
+export type LeadStage = "new" | "qualified" | "replied" | "waiting_response" | "booked" | "converted" | "not_interested" | "spam";
 
 export interface Client {
   client_id: string;
@@ -23,6 +23,8 @@ export interface ClientCategory {
   content_angles: string[];
   lead_keywords: string[];
   negative_keywords: string[];
+  recommended_platforms: Platform[];
+  default_funnel_stages: ContentAsset["funnel_stage"][];
 }
 
 export interface PlatformAccount {
@@ -35,6 +37,7 @@ export interface PlatformAccount {
   language: string;
   region: string;
   content_role: string;
+  platform_account_url: string | null;
   status: "active" | "paused" | "archived";
   auth_status: "connected" | "mock" | "disconnected";
   posting_enabled: boolean;
@@ -77,6 +80,7 @@ export interface PlatformVariant {
   media_path: string | null;
   cta: string;
   status: Status;
+  approval_status: ApprovalStatus;
 }
 
 export interface PublishTask {
@@ -93,6 +97,10 @@ export interface PublishTask {
   platform_post_id: string | null;
   published_at: string | null;
   error_message: string | null;
+  retry_count: number;
+  max_retry: number;
+  last_error: string | null;
+  next_retry_at: string | null;
 }
 
 export interface PublishRecord extends PublishTask {
@@ -115,6 +123,10 @@ export interface Lead {
   recommended_reply: string;
   human_review_required: boolean;
   assigned_to: string;
+  next_follow_up_at: string | null;
+  last_contacted_at: string | null;
+  contact_method: "comment" | "dm" | "email" | "phone" | "whatsapp" | "wechat" | "unknown";
+  lead_notes: string[];
   created_at: string;
 }
 

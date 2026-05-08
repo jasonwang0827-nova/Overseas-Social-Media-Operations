@@ -1,0 +1,114 @@
+{
+  "client_id": "client_study_001",
+  "week_start": "2026-05-04",
+  "week_end": "2026-05-10",
+  "published_count": 1,
+  "platform_publish_status": {
+    "instagram": {
+      "published": 1
+    }
+  },
+  "failed_tasks": [],
+  "retry_pending_tasks": [],
+  "new_leads": 2,
+  "high_value_leads": [
+    {
+      "lead_id": "lead_20260508180546_yfqv",
+      "client_id": "client_study_001",
+      "platform": "instagram",
+      "account_id": "ig_study_001",
+      "source_type": "comment",
+      "source_post_id": "platform_post_mock",
+      "user_handle": "canada_parent_88",
+      "user_display_name": "Lily",
+      "message_text": "我孩子现在大一，可以转到加拿大吗？",
+      "detected_intent": "transfer_credit",
+      "lead_score": 80,
+      "lead_stage": "qualified",
+      "recommended_reply": "可以的，要看你现在读的学校、专业和已修课程。你可以私信我们，ABC Study Abroad 可以先帮你做一个初步判断。",
+      "human_review_required": true,
+      "assigned_to": "jason",
+      "created_at": "2026-05-08T18:05:46.052Z",
+      "next_follow_up_at": null,
+      "last_contacted_at": null,
+      "contact_method": "unknown",
+      "lead_notes": []
+    },
+    {
+      "lead_id": "lead_20260508182605_5llu",
+      "client_id": "client_study_001",
+      "platform": "instagram",
+      "account_id": "ig_study_001",
+      "source_type": "comment",
+      "source_post_id": "platform_post_mock",
+      "user_handle": "web_demo_lead",
+      "user_display_name": "Web Demo Lead",
+      "message_text": "想了解加拿大转学分，怎么联系顾问？",
+      "detected_intent": "transfer_credit",
+      "lead_score": 100,
+      "lead_stage": "qualified",
+      "recommended_reply": "可以的，要看你现在读的学校、专业和已修课程。你可以私信我们，ABC Study Abroad 可以先帮你做一个初步判断。",
+      "human_review_required": true,
+      "assigned_to": "jason",
+      "created_at": "2026-05-08T18:26:05.834Z",
+      "next_follow_up_at": null,
+      "last_contacted_at": null,
+      "contact_method": "unknown",
+      "lead_notes": []
+    }
+  ],
+  "follow_up_required": [
+    {
+      "lead_id": "lead_20260508180546_yfqv",
+      "client_id": "client_study_001",
+      "platform": "instagram",
+      "account_id": "ig_study_001",
+      "source_type": "comment",
+      "source_post_id": "platform_post_mock",
+      "user_handle": "canada_parent_88",
+      "user_display_name": "Lily",
+      "message_text": "我孩子现在大一，可以转到加拿大吗？",
+      "detected_intent": "transfer_credit",
+      "lead_score": 80,
+      "lead_stage": "qualified",
+      "recommended_reply": "可以的，要看你现在读的学校、专业和已修课程。你可以私信我们，ABC Study Abroad 可以先帮你做一个初步判断。",
+      "human_review_required": true,
+      "assigned_to": "jason",
+      "created_at": "2026-05-08T18:05:46.052Z",
+      "next_follow_up_at": null,
+      "last_contacted_at": null,
+      "contact_method": "unknown",
+      "lead_notes": []
+    },
+    {
+      "lead_id": "lead_20260508182605_5llu",
+      "client_id": "client_study_001",
+      "platform": "instagram",
+      "account_id": "ig_study_001",
+      "source_type": "comment",
+      "source_post_id": "platform_post_mock",
+      "user_handle": "web_demo_lead",
+      "user_display_name": "Web Demo Lead",
+      "message_text": "想了解加拿大转学分，怎么联系顾问？",
+      "detected_intent": "transfer_credit",
+      "lead_score": 100,
+      "lead_stage": "qualified",
+      "recommended_reply": "可以的，要看你现在读的学校、专业和已修课程。你可以私信我们，ABC Study Abroad 可以先帮你做一个初步判断。",
+      "human_review_required": true,
+      "assigned_to": "jason",
+      "created_at": "2026-05-08T18:26:05.834Z",
+      "next_follow_up_at": null,
+      "last_contacted_at": null,
+      "contact_method": "unknown",
+      "lead_notes": []
+    }
+  ],
+  "top_content_themes": {
+    "college_transfer": 1
+  },
+  "next_week_recommendations": [
+    "复用高意图线索对应的内容主题。",
+    "优先跟进高分线索并记录联系结果。",
+    "继续保持每个平台差异化版本发布。"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "client_id": "client_realestate_ui_001",
+  "week_start": "2026-05-04",
+  "week_end": "2026-05-10",
+  "published_count": 0,
+  "platform_publish_status": {},
+  "failed_tasks": [],
+  "retry_pending_tasks": [],
+  "new_leads": 0,
+  "high_value_leads": [],
+  "follow_up_required": [],
+  "best_content_themes": {},
+  "next_week_recommendations": [
+    "下周先补齐 3-5 条基础内容资产。",
+    "补充更明确的 CTA 来提高评论和私信线索。",
+    "优先检查所有高分线索，并安排人工跟进。"
+  ]
+}

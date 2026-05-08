@@ -1,6 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { assertContentApproved, assertPublishApproved } from "../../packages/core/approval.js";
+import { assertContentApproved, assertPublishApproved, assertVariantApproved } from "../../packages/core/approval.js";
 import { categories, getCategory } from "../../packages/core/category.js";
 import type {
   Client,
@@ -55,6 +55,8 @@ async function main(): Promise<void> {
       return createVariant();
     case "content:approve":
       return approveContent();
+    case "variant:approve":
+      return approveVariant();
     case "publish:schedule":
       return schedulePublish();
     case "publish:run":
@@ -67,6 +69,8 @@ async function main(): Promise<void> {
       return scoreLeads();
     case "report:daily":
       return generateDailyReport();
+    case "report:weekly":
+      return generateWeeklyReport();
     case "demo:seed":
       return seedDemo();
     default:
@@ -169,6 +173,7 @@ async function addAccount(): Promise<void> {
     language: arg("language", "zh"),
     region: arg("region", "Canada"),
     content_role: arg("content_role", "case_explainer"),
+    platform_account_url: arg("platform_account_url", ""),
     status: "active",
     auth_status: "mock",
     posting_enabled: true
@@ -241,7 +246,8 @@ async function createVariant(): Promise<void> {
     hashtags: csv(arg("hashtags", defaultHashtags(platform, content.category_id).join(","))),
     media_path: arg("media_path", `data/clients/${clientId}/exports/${platform}/${content.content_theme}_${platform}.mp4`),
     cta: arg("cta", defaultCta(platform, content.cta)),
-    status: "ready_for_review"
+    status: "ready_for_review",
+    approval_status: "ready_for_review"
   };
 
   variants.push(variant);
@@ -263,6 +269,20 @@ async function approveContent(): Promise<void> {
   console.log(`Approved content ${contentId}`);
 }
 
+async function approveVariant(): Promise<void> {
+  const clientId = arg("client_id");
+  const variantId = arg("variant_id");
+  const variants = await readClientArray<PlatformVariant>(clientId, "platform-variants.json");
+  const variant = variants.find((item) => item.variant_id === variantId);
+  if (!variant) {
+    throw new Error(`Variant ${variantId} was not found under ${clientId}`);
+  }
+  variant.status = "approved";
+  variant.approval_status = "approved";
+  await writeClientArray(clientId, "platform-variants.json", variants);
+  console.log(`Approved variant ${variantId}`);
+}
+
 async function schedulePublish(): Promise<void> {
   const clientId = arg("client_id");
   const variantId = arg("variant_id");
@@ -278,6 +298,7 @@ async function schedulePublish(): Promise<void> {
     throw new Error(`Content ${variant.content_id} was not found under ${clientId}`);
   }
   assertContentApproved(content);
+  assertVariantApproved(variant);
 
   const task: PublishTask = {
     publish_task_id: arg("publish_task_id", id("pub")),
@@ -292,7 +313,11 @@ async function schedulePublish(): Promise<void> {
     publish_method: "mock",
     platform_post_id: null,
     published_at: null,
-    error_message: null
+    error_message: null,
+    retry_count: 0,
+    max_retry: Number(arg("max_retry", "3")),
+    last_error: null,
+    next_retry_at: null
   };
 
   queue.push(task);
@@ -314,6 +339,9 @@ async function runPublishQueue(): Promise<void> {
     if (new Date(task.scheduled_at) > now) {
       continue;
     }
+    if (task.next_retry_at && new Date(task.next_retry_at) > now) {
+      continue;
+    }
     try {
       assertPublishApproved(task);
     } catch (error) {
@@ -330,6 +358,15 @@ async function runPublishQueue(): Promise<void> {
     if (!variant) {
       task.status = "failed";
       task.error_message = `Variant ${task.variant_id} was not found`;
+      task.last_error = task.error_message;
+      continue;
+    }
+    try {
+      assertVariantApproved(variant);
+    } catch (error) {
+      task.status = "failed";
+      task.error_message = error instanceof Error ? error.message : "variant must be approved before publishing";
+      task.last_error = task.error_message;
       continue;
     }
 
@@ -340,10 +377,11 @@ async function runPublishQueue(): Promise<void> {
       task.platform_post_id = result.platform_post_id;
       task.published_at = new Date().toISOString();
       task.error_message = null;
+      task.last_error = null;
+      task.next_retry_at = null;
       records.push({ ...task, record_id: id("record") });
     } else {
-      task.status = "failed";
-      task.error_message = result.error_message;
+      registerPublishFailure(task, result.error_message ?? "Unknown publish error");
     }
   }
 
@@ -389,6 +427,10 @@ async function importLead(): Promise<void> {
     recommended_reply: "",
     human_review_required: true,
     assigned_to: arg("assigned_to", "jason"),
+    next_follow_up_at: arg("next_follow_up_at", ""),
+    last_contacted_at: null,
+    contact_method: arg("contact_method", "unknown") as Lead["contact_method"],
+    lead_notes: csv(arg("lead_notes", "")),
     created_at: new Date().toISOString()
   };
   lead.recommended_reply = generateReplyDraft(client, lead);
@@ -419,14 +461,14 @@ async function upsertReplyDraft(clientId: string, lead: Lead): Promise<void> {
   const existing = drafts.find((draft) => draft.lead_id === lead.lead_id);
   if (existing) {
     existing.draft_text = lead.recommended_reply;
-    existing.approval_status = "pending";
+    existing.approval_status = "draft";
   } else {
     drafts.push({
       reply_draft_id: id("reply"),
       lead_id: lead.lead_id,
       client_id: clientId,
       draft_text: lead.recommended_reply,
-      approval_status: "pending",
+      approval_status: "draft",
       sent_status: "not_sent",
       created_at: new Date().toISOString()
     });
@@ -462,6 +504,76 @@ async function generateDailyReport(): Promise<void> {
   console.log(`Daily report written to ${reportPath}`);
 }
 
+async function generateWeeklyReport(): Promise<void> {
+  const clientId = arg("client_id");
+  const weekStart = arg("week_start", startOfWeek(new Date()).toISOString().slice(0, 10));
+  const weekEnd = arg("week_end", endOfWeek(new Date(`${weekStart}T00:00:00.000Z`)).toISOString().slice(0, 10));
+  const queue = await readClientArray<PublishTask>(clientId, "publish-queue.json");
+  const records = await readClientArray<PublishRecord>(clientId, "publish-records.json");
+  const leads = await readClientArray<Lead>(clientId, "leads.json");
+  const contents = await readClientArray<ContentAsset>(clientId, "content-pool.json");
+  const inRange = (value: string | null): boolean => Boolean(value && value >= `${weekStart}T00:00:00` && value <= `${weekEnd}T23:59:59`);
+  const weeklyLeads = leads.filter((lead) => inRange(lead.created_at));
+  const weeklyRecords = records.filter((record) => inRange(record.published_at));
+  const report = {
+    client_id: clientId,
+    week_start: weekStart,
+    week_end: weekEnd,
+    published_count: weeklyRecords.length,
+    platform_publish_status: queue.reduce<Record<string, Record<string, number>>>((acc, task) => {
+      acc[task.platform] ??= {};
+      acc[task.platform][task.status] = (acc[task.platform][task.status] ?? 0) + 1;
+      return acc;
+    }, {}),
+    failed_tasks: queue.filter((task) => task.status === "failed"),
+    retry_pending_tasks: queue.filter((task) => task.next_retry_at),
+    new_leads: weeklyLeads.length,
+    high_value_leads: weeklyLeads.filter((lead) => lead.lead_score >= 70),
+    follow_up_required: weeklyLeads.filter((lead) => lead.human_review_required && lead.lead_stage !== "spam"),
+    best_content_themes: summarizeThemes(contents),
+    next_week_recommendations: buildWeeklyRecommendations(contents, weeklyLeads)
+  };
+  const reportPath = join(clientDir(clientId), "reports", "weekly", `${weekStart}_${weekEnd}.json`);
+  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  console.log(`Weekly report written to ${reportPath}`);
+}
+
+function registerPublishFailure(task: PublishTask, message: string): void {
+  task.retry_count = (task.retry_count ?? 0) + 1;
+  task.error_message = message;
+  task.last_error = message;
+  if (task.retry_count < (task.max_retry ?? 3)) {
+    task.status = "scheduled";
+    task.next_retry_at = new Date(Date.now() + task.retry_count * 15 * 60 * 1000).toISOString();
+  } else {
+    task.status = "failed";
+    task.next_retry_at = null;
+  }
+}
+
+function startOfWeek(date: Date): Date {
+  const result = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = result.getUTCDay() || 7;
+  result.setUTCDate(result.getUTCDate() - day + 1);
+  return result;
+}
+
+function endOfWeek(date: Date): Date {
+  const result = startOfWeek(date);
+  result.setUTCDate(result.getUTCDate() + 6);
+  return result;
+}
+
+function buildWeeklyRecommendations(contents: ContentAsset[], leads: Lead[]): string[] {
+  const themes = Object.keys(summarizeThemes(contents));
+  const leadIntents = [...new Set(leads.map((lead) => lead.detected_intent))].filter(Boolean);
+  return [
+    themes.length > 0 ? `继续复用表现中的内容主题：${themes.slice(0, 3).join(", ")}` : "下周先补齐 3-5 条基础内容资产。",
+    leadIntents.length > 0 ? `围绕高意图线索继续制作内容：${leadIntents.slice(0, 3).join(", ")}` : "补充更明确的 CTA 来提高评论和私信线索。",
+    "优先检查所有高分线索，并安排人工跟进。"
+  ];
+}
+
 function summarizeThemes(contents: ContentAsset[]): Record<string, number> {
   return contents.reduce<Record<string, number>>((acc, content) => {
     acc[content.content_theme] = (acc[content.content_theme] ?? 0) + 1;
@@ -488,6 +600,9 @@ async function seedDemo(): Promise<void> {
   await runWithArgs("content:variant", { client_id: "client_study_001", content_id: "content_20260508_001", platform: "instagram", account_id: "ig_study_001", variant_id: "variant_ig_001" });
   await runWithArgs("content:variant", { client_id: "client_study_001", content_id: "content_20260508_001", platform: "tiktok", account_id: "tiktok_study_001", variant_id: "variant_tk_001" });
   await runWithArgs("content:variant", { client_id: "client_study_001", content_id: "content_20260508_001", platform: "facebook", account_id: "facebook_study_001", variant_id: "variant_fb_001" });
+  await runWithArgs("variant:approve", { client_id: "client_study_001", variant_id: "variant_ig_001" });
+  await runWithArgs("variant:approve", { client_id: "client_study_001", variant_id: "variant_tk_001" });
+  await runWithArgs("variant:approve", { client_id: "client_study_001", variant_id: "variant_fb_001" });
   await runWithArgs("publish:schedule", { client_id: "client_study_001", variant_id: "variant_ig_001", publish_task_id: "pub_20260508_001" });
   await runWithArgs("lead:import", { client_id: "client_study_001", message_text: "我孩子现在大一，可以转到加拿大吗？", platform: "instagram", account_id: "ig_study_001" });
   console.log("Demo data seeded for client_study_001");
@@ -511,6 +626,9 @@ async function runWithArgs(nextCommand: string, nextArgs: Record<string, string>
       break;
     case "content:approve":
       await approveContent();
+      break;
+    case "variant:approve":
+      await approveVariant();
       break;
     case "content:variant":
       await createVariant();
@@ -578,10 +696,12 @@ function printHelp(): void {
   npm run content:add -- --client_id client_study_001
   npm run content:variant -- --client_id client_study_001 --content_id content_20260508_001 --platform instagram --account_id ig_study_001
   npm run content:approve -- --client_id client_study_001 --content_id content_20260508_001
+  npm run variant:approve -- --client_id client_study_001 --variant_id variant_ig_001
   npm run publish:schedule -- --client_id client_study_001 --variant_id variant_ig_001
   npm run publish:run -- --client_id client_study_001
   npm run lead:import -- --client_id client_study_001 --message_text "我孩子现在大一，可以转到加拿大吗？"
-  npm run report:daily -- --client_id client_study_001`);
+  npm run report:daily -- --client_id client_study_001
+  npm run report:weekly -- --client_id client_study_001`);
 }
 
 main().catch((error: unknown) => {

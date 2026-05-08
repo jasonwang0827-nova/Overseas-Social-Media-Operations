@@ -10,6 +10,8 @@ Client -> Business Category -> Target Audience -> Content Strategy -> Platform A
 
 The first version uses local JSON files under `data/clients/<client_id>/` and mock publishers for Facebook, Instagram, TikTok, and X. YouTube is reserved as an adapter folder only.
 
+Global client category templates live in `data/categories.json` and are copied into each client directory as `categories.json`.
+
 ## Quick Start
 
 ```bash
@@ -30,6 +32,7 @@ CLI flow:
 npm run publish:run -- --client_id client_study_001
 npm run lead:score -- --client_id client_study_001
 npm run report:daily -- --client_id client_study_001
+npm run report:weekly -- --client_id client_study_001
 ```
 
 ## Web UI
@@ -44,6 +47,7 @@ The MVP includes a local dashboard for checking:
 - Publish queue and publish records
 - Lead pool, lead scoring, and reply drafts
 - Daily report preview
+- Weekly report generation
 
 The web server reads and writes the same JSON files under `data/clients/<client_id>/`.
 
@@ -55,17 +59,30 @@ npm run account:add -- --client_id client_study_001 --platform instagram --accou
 npm run content:add -- --client_id client_study_001 --category_id study_abroad
 npm run content:variant -- --client_id client_study_001 --content_id content_xxx --platform instagram --account_id ig_xxx
 npm run content:approve -- --client_id client_study_001 --content_id content_xxx
+npm run variant:approve -- --client_id client_study_001 --variant_id variant_xxx
 npm run publish:schedule -- --client_id client_study_001 --variant_id variant_xxx
 npm run publish:run -- --client_id client_study_001
 npm run publish:status -- --client_id client_study_001
 npm run lead:import -- --client_id client_study_001 --message_text "我孩子现在大一，可以转到加拿大吗？"
 npm run lead:score -- --client_id client_study_001
 npm run report:daily -- --client_id client_study_001
+npm run report:weekly -- --client_id client_study_001
 ```
+
+## Business Rules
+
+- Content assets cannot be published directly.
+- A publish task must reference `variant_id`.
+- Content must be approved before scheduling.
+- Platform variants must be approved before scheduling or publishing.
+- `publish:run` blocks unapproved tasks and unapproved variants.
+- Publish tasks include retry metadata: `retry_count`, `max_retry`, `last_error`, and `next_retry_at`.
+- Leads include follow-up metadata: `lead_stage`, `assigned_to`, `next_follow_up_at`, `last_contacted_at`, `contact_method`, and `lead_notes`.
 
 ## Data Layout
 
 ```text
+data/categories.json
 data/clients/<client_id>/
   client.json
   accounts.json

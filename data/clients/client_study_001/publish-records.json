@@ -13,6 +13,10 @@
     "platform_post_id": "instagram_mock_pub_20260508_001",
     "published_at": "2026-05-08T18:05:53.013Z",
     "error_message": null,
-    "record_id": "record_20260508180553_89qg"
+    "record_id": "record_20260508180553_89qg",
+    "retry_count": 0,
+    "max_retry": 3,
+    "last_error": null,
+    "next_retry_at": null
   }
 ]
