@@ -1,13 +1,13 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import type { Client, ContentAsset, Lead, PlatformAccount, PlatformVariant, PublishRecord, PublishTask, ReplyDraft } from "../../packages/core/types.js";
-import { getCategory } from "../../packages/core/category.js";
+import { categories, getCategory } from "../../packages/core/category.js";
 import { classifyIntent } from "../../packages/lead-intelligence/classifyIntent.js";
 import { generateReplyDraft } from "../../packages/lead-intelligence/generateReplyDraft.js";
 import { scoreLead } from "../../packages/lead-intelligence/scoreLead.js";
 import { createMockPublisher } from "../../packages/publishers/mockPublisher.js";
-import { clientDir, clientFile, readClientArray, readJson, writeClientArray, writeJson } from "../../packages/storage/jsonStore.js";
+import { clientDir, clientFile, dataRoot, ensureClientDirectories, readClientArray, readJson, writeClientArray, writeJson } from "../../packages/storage/jsonStore.js";
 
 const port = Number(process.env.PORT ?? 4321);
 const publicDir = join(process.cwd(), "apps", "web", "public");
@@ -32,9 +32,21 @@ server.listen(port, () => {
 });
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  if (req.method === "GET" && url.pathname === "/api/clients") {
+    sendJson(res, 200, { clients: await listClients() });
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/state") {
     const clientId = url.searchParams.get("client_id") ?? "client_study_001";
     sendJson(res, 200, await loadState(clientId));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/client/create") {
+    const body = await readBody<CreateClientRequest>(req);
+    await createClient(body);
+    sendJson(res, 200, await loadState(body.client_id));
     return;
   }
 
@@ -94,6 +106,8 @@ async function loadState(clientId: string) {
   const drafts = await readClientArray<ReplyDraft>(clientId, "reply-drafts.json");
 
   return {
+    clients: await listClients(),
+    categories,
     client,
     accounts,
     contents,
@@ -111,6 +125,94 @@ async function loadState(clientId: string) {
       high_score_leads: leads.filter((item) => item.lead_score >= 70).length
     }
   };
+}
+
+interface CreateClientRequest {
+  client_id: string;
+  client_name: string;
+  category_id: string;
+  business_type: string;
+  region: string;
+  language: string[];
+  target_audience: string[];
+  service_keywords: string[];
+  brand_tone: string;
+  lead_goal: string[];
+  openclaw_brief?: string;
+}
+
+async function listClients(): Promise<Array<{ client_id: string; client_name: string; industry: string; status: Client["status"] }>> {
+  let entries: string[] = [];
+  try {
+    entries = await readdir(dataRoot);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+
+  const clients = await Promise.all(
+    entries.map(async (entry) => {
+      const client = await readJson<Client | null>(clientFile(entry, "client.json"), null);
+      if (!client) return null;
+      return {
+        client_id: client.client_id,
+        client_name: client.client_name,
+        industry: client.industry,
+        status: client.status
+      };
+    })
+  );
+
+  return clients.filter((client): client is NonNullable<typeof client> => client !== null).sort((a, b) => a.client_id.localeCompare(b.client_id));
+}
+
+async function createClient(body: CreateClientRequest): Promise<void> {
+  if (!body.client_id || !/^[a-z0-9_]+$/.test(body.client_id)) {
+    throw new Error("client_id can only contain lowercase letters, numbers, and underscores.");
+  }
+  if (!body.client_name) {
+    throw new Error("client_name is required.");
+  }
+
+  const category = getCategory(body.category_id);
+  const existing = await readJson<Client | null>(clientFile(body.client_id, "client.json"), null);
+  if (existing) {
+    throw new Error(`Client ${body.client_id} already exists.`);
+  }
+
+  await ensureClientDirectories(body.client_id);
+
+  const client: Client = {
+    client_id: body.client_id,
+    client_name: body.client_name,
+    industry: category.category_id,
+    business_type: body.business_type || `${category.category_id}_consulting`,
+    region: body.region || "Canada",
+    language: body.language.length > 0 ? body.language : ["zh", "en"],
+    target_audience: body.target_audience.length > 0 ? body.target_audience : ["prospects"],
+    service_keywords: body.service_keywords.length > 0 ? body.service_keywords : category.lead_keywords,
+    brand_tone: body.brand_tone || "professional, trustworthy, friendly",
+    lead_goal: body.lead_goal.length > 0 ? body.lead_goal : ["DM inquiry", "book consultation"],
+    status: "active"
+  };
+
+  await writeJson(clientFile(body.client_id, "client.json"), client);
+  await writeJson(clientFile(body.client_id, "categories.json"), categories);
+  await writeClientArray<PlatformAccount>(body.client_id, "accounts.json", []);
+  await writeClientArray<ContentAsset>(body.client_id, "content-pool.json", []);
+  await writeClientArray<PlatformVariant>(body.client_id, "platform-variants.json", []);
+  await writeClientArray<PublishTask>(body.client_id, "publish-queue.json", []);
+  await writeClientArray<PublishRecord>(body.client_id, "publish-records.json", []);
+  await writeClientArray<Lead>(body.client_id, "leads.json", []);
+  await writeClientArray<ReplyDraft>(body.client_id, "reply-drafts.json", []);
+
+  if (body.openclaw_brief?.trim()) {
+    await writeJson(clientFile(body.client_id, "openclaw-client-brief.json"), {
+      client_id: body.client_id,
+      brief: body.openclaw_brief.trim(),
+      next_step: "Use this brief to generate content angles, account personas, service keywords, lead keywords, and initial content assets.",
+      created_at: new Date().toISOString()
+    });
+  }
 }
 
 async function runPublish(clientId: string): Promise<void> {

@@ -30,7 +30,8 @@ body {
 
 button,
 select,
-textarea {
+textarea,
+input {
   font: inherit;
 }
 
@@ -151,14 +152,16 @@ h3 {
 }
 
 select,
-textarea {
+textarea,
+input {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   color: var(--text);
 }
 
-select {
+select,
+input {
   height: 40px;
   padding: 0 12px;
 }
@@ -348,6 +351,35 @@ select {
   margin-bottom: 16px;
 }
 
+.client-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.client-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.client-form label span {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.client-form .wide {
+  grid-column: span 3;
+}
+
+.form-actions {
+  grid-column: span 3;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 textarea {
   min-height: 82px;
   padding: 12px;
@@ -379,8 +411,14 @@ textarea {
   .account-grid,
   .content-grid,
   .lead-grid,
+  .client-form,
   .panel-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .client-form .wide,
+  .form-actions {
+    grid-column: span 2;
   }
 }
 
@@ -404,8 +442,14 @@ textarea {
   .account-grid,
   .content-grid,
   .lead-grid,
+  .client-form,
   .panel-grid {
     grid-template-columns: 1fr;
+  }
+
+  .client-form .wide,
+  .form-actions {
+    grid-column: span 1;
   }
 
   .lead-form .action-button {

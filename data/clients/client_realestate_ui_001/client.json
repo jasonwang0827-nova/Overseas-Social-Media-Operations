@@ -1,0 +1,31 @@
+{
+  "client_id": "client_realestate_ui_001",
+  "client_name": "North York Realty Demo",
+  "industry": "real_estate",
+  "business_type": "real_estate_agent",
+  "region": "Canada",
+  "language": [
+    "zh",
+    "en"
+  ],
+  "target_audience": [
+    "home buyers",
+    "home sellers",
+    "new immigrant families",
+    "investors"
+  ],
+  "service_keywords": [
+    "买房",
+    "卖房",
+    "估价",
+    "贷款",
+    "学区房"
+  ],
+  "brand_tone": "local, practical, trustworthy",
+  "lead_goal": [
+    "book showing",
+    "DM inquiry",
+    "home valuation"
+  ],
+  "status": "active"
+}

@@ -37,6 +37,7 @@ npm run report:daily -- --client_id client_study_001
 The MVP includes a local dashboard for checking:
 
 - Client profile
+- Client creation with industry, audience, keywords, lead goals, and OpenClaw client brief
 - Platform accounts
 - Content assets
 - Platform variants

@@ -32,6 +32,7 @@ async function loadState() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "读取失败");
     state.data = data;
+    updateClientOptions(data.clients || []);
     render();
   } catch (error) {
     app.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`;
@@ -88,8 +89,64 @@ function renderOverview() {
 }
 
 function renderClients() {
-  const { client, accounts } = state.data;
+  const { client, accounts, categories } = state.data;
   return `
+    <section class="panel">
+      <h2>创建客户</h2>
+      <form class="client-form" id="clientForm">
+        <label>
+          <span>客户名称</span>
+          <input name="client_name" placeholder="ABC Study Abroad" required />
+        </label>
+        <label>
+          <span>client_id</span>
+          <input name="client_id" placeholder="client_study_002" required />
+        </label>
+        <label>
+          <span>客户类型</span>
+          <select name="category_id">
+            ${categories.map((category) => `<option value="${escapeHtml(category.category_id)}">${escapeHtml(category.category_name)} · ${escapeHtml(category.category_id)}</option>`).join("")}
+          </select>
+        </label>
+        <label>
+          <span>业务类型</span>
+          <input name="business_type" placeholder="education_consulting" />
+        </label>
+        <label>
+          <span>地区</span>
+          <input name="region" value="Canada" />
+        </label>
+        <label>
+          <span>语言</span>
+          <input name="language" value="zh, en" />
+        </label>
+        <label class="wide">
+          <span>目标人群</span>
+          <input name="target_audience" placeholder="Chinese students, Chinese parents, new immigrants" />
+        </label>
+        <label class="wide">
+          <span>服务关键词</span>
+          <input name="service_keywords" placeholder="study abroad, visa, 转学分, 签证" />
+        </label>
+        <label class="wide">
+          <span>品牌语气</span>
+          <input name="brand_tone" value="professional, trustworthy, friendly" />
+        </label>
+        <label class="wide">
+          <span>获客目标</span>
+          <input name="lead_goal" value="book consultation, DM inquiry, WhatsApp contact" />
+        </label>
+        <label class="wide">
+          <span>OpenClaw 客户简报</span>
+          <textarea name="openclaw_brief" placeholder="粘贴更详细的客户资料：业务范围、目标客户、服务价格、优势、禁用表达、内容风格、主要平台、获客目标等。"></textarea>
+        </label>
+        <div class="form-actions">
+          <button class="action-button" type="submit">创建客户</button>
+          <button class="action-button secondary" type="button" data-action="fillClientExample">填入留学示例</button>
+        </div>
+      </form>
+    </section>
+
     <section class="panel">
       <h2>客户业务档案</h2>
       <table class="table">
@@ -276,6 +333,67 @@ function bindViewEvents() {
       postJson("/api/lead/import", { client_id: state.clientId, message_text: message });
     });
   }
+
+  const clientForm = document.querySelector("#clientForm");
+  if (clientForm) {
+    clientForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(clientForm);
+      const payload = {
+        client_id: String(form.get("client_id") || "").trim(),
+        client_name: String(form.get("client_name") || "").trim(),
+        category_id: String(form.get("category_id") || "study_abroad"),
+        business_type: String(form.get("business_type") || "").trim(),
+        region: String(form.get("region") || "Canada").trim(),
+        language: splitList(String(form.get("language") || "")),
+        target_audience: splitList(String(form.get("target_audience") || "")),
+        service_keywords: splitList(String(form.get("service_keywords") || "")),
+        brand_tone: String(form.get("brand_tone") || "").trim(),
+        lead_goal: splitList(String(form.get("lead_goal") || "")),
+        openclaw_brief: String(form.get("openclaw_brief") || "").trim()
+      };
+      await postJson("/api/client/create", payload);
+      state.clientId = payload.client_id;
+      updateClientOptions(state.data.clients || []);
+    });
+  }
+
+  document.querySelectorAll("[data-action='fillClientExample']").forEach((button) => {
+    button.addEventListener("click", () => fillClientExample());
+  });
+}
+
+function updateClientOptions(clients) {
+  const known = new Set([...clientSelect.options].map((option) => option.value));
+  for (const client of clients) {
+    if (!known.has(client.client_id)) {
+      const option = document.createElement("option");
+      option.value = client.client_id;
+      option.textContent = `${client.client_id} · ${client.client_name}`;
+      clientSelect.appendChild(option);
+    }
+  }
+  clientSelect.value = state.clientId;
+}
+
+function fillClientExample() {
+  const form = document.querySelector("#clientForm");
+  if (!form) return;
+  form.client_name.value = "Maple Study Consulting";
+  form.client_id.value = `client_study_${Date.now().toString().slice(-4)}`;
+  form.category_id.value = "study_abroad";
+  form.business_type.value = "education_consulting";
+  form.region.value = "Canada";
+  form.language.value = "zh, en";
+  form.target_audience.value = "Chinese students, Chinese parents, international students, new immigrants";
+  form.service_keywords.value = "study abroad, visa, college transfer, university application, 加拿大留学, 转学分, 签证";
+  form.brand_tone.value = "professional, trustworthy, friendly";
+  form.lead_goal.value = "book consultation, DM inquiry, WhatsApp contact, website visit";
+  form.openclaw_brief.value = "客户是一家加拿大留学咨询公司，主要服务中国学生、家长和新移民家庭。核心业务包括大学申请、学院转大学、转学分规划、签证咨询和学校选择。内容需要专业、可信、温和，不夸大承诺，不制造焦虑。重点平台是 Instagram、TikTok、Facebook。主要获客目标是私信咨询和预约顾问。";
+}
+
+function splitList(value) {
+  return value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
 }
 
 function row(label, value) {
