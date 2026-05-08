@@ -1,0 +1,27 @@
+{
+  "name": "social-ops-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Overseas Social Media Operations & Lead Management Hub MVP",
+  "scripts": {
+    "client:create": "tsx apps/worker/cli.ts client:create",
+    "account:add": "tsx apps/worker/cli.ts account:add",
+    "content:add": "tsx apps/worker/cli.ts content:add",
+    "content:variant": "tsx apps/worker/cli.ts content:variant",
+    "content:approve": "tsx apps/worker/cli.ts content:approve",
+    "publish:schedule": "tsx apps/worker/cli.ts publish:schedule",
+    "publish:run": "tsx apps/worker/cli.ts publish:run",
+    "publish:status": "tsx apps/worker/cli.ts publish:status",
+    "lead:import": "tsx apps/worker/cli.ts lead:import",
+    "lead:score": "tsx apps/worker/cli.ts lead:score",
+    "report:daily": "tsx apps/worker/cli.ts report:daily",
+    "demo:seed": "tsx apps/worker/cli.ts demo:seed",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

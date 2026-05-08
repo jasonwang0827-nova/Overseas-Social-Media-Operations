@@ -1,0 +1,29 @@
+[
+  {
+    "content_id": "content_20260508_001",
+    "client_id": "client_study_001",
+    "category_id": "study_abroad",
+    "content_theme": "college_transfer",
+    "content_type": "short_video",
+    "content_angle": "pain_point",
+    "title": "加拿大大学转学分，很多家长一开始就搞错了",
+    "hook": "很多家长以为转学分只是换学校，其实最容易亏的是这些学分。",
+    "main_points": [
+      "不是所有课程都能转",
+      "学校之间评估标准不同",
+      "专业方向会影响转学分结果",
+      "提前规划可以减少时间和学费浪费"
+    ],
+    "cta": "想知道你的情况能不能转学分，可以私信我。",
+    "language": "zh",
+    "target_audience": [
+      "parents",
+      "students"
+    ],
+    "funnel_stage": "lead_generation",
+    "media_assets": [],
+    "status": "approved",
+    "created_by": "openclaw",
+    "approved_by_human": true
+  }
+]

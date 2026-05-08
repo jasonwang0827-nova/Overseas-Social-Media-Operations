@@ -1,0 +1,20 @@
+[
+  {
+    "lead_id": "lead_20260508180546_yfqv",
+    "client_id": "client_study_001",
+    "platform": "instagram",
+    "account_id": "ig_study_001",
+    "source_type": "comment",
+    "source_post_id": "platform_post_mock",
+    "user_handle": "canada_parent_88",
+    "user_display_name": "Lily",
+    "message_text": "我孩子现在大一，可以转到加拿大吗？",
+    "detected_intent": "transfer_credit",
+    "lead_score": 80,
+    "lead_stage": "qualified",
+    "recommended_reply": "可以的，要看你现在读的学校、专业和已修课程。你可以私信我们，ABC Study Abroad 可以先帮你做一个初步判断。",
+    "human_review_required": true,
+    "assigned_to": "jason",
+    "created_at": "2026-05-08T18:05:46.052Z"
+  }
+]

@@ -1,0 +1,47 @@
+import type { ClientCategory } from "./types.js";
+
+export const categories: ClientCategory[] = [
+  {
+    category_id: "study_abroad",
+    category_name: "留学移民",
+    content_angles: ["申请误区", "家长焦虑", "签证问题", "转学分", "学校选择", "真实案例", "政策变化"],
+    lead_keywords: ["怎么申请", "费用多少", "可以咨询吗", "转学分", "签证", "留学", "移民", "我孩子", "想了解", "怎么联系"],
+    negative_keywords: ["广告", "不需要", "骗子", "无聊", "别推给我"]
+  },
+  {
+    category_id: "real_estate",
+    category_name: "地产",
+    content_angles: ["买房误区", "社区介绍", "贷款知识", "投资回报", "移民家庭买房", "房价趋势"],
+    lead_keywords: ["买房", "卖房", "估价", "贷款", "首付", "投资", "学区", "看房", "怎么联系"],
+    negative_keywords: ["广告", "不需要", "骗子", "无聊", "别推给我"]
+  },
+  {
+    category_id: "brand_global",
+    category_name: "品牌出海",
+    content_angles: ["获客", "广告投放", "社媒运营", "案例拆解", "本地化", "渠道增长"],
+    lead_keywords: ["代运营", "广告投放", "获客", "品牌推广", "怎么收费", "可以咨询吗", "想了解"],
+    negative_keywords: ["广告", "不需要", "骗子", "无聊", "别推给我"]
+  },
+  {
+    category_id: "local_service",
+    category_name: "本地服务",
+    content_angles: ["服务场景", "客户案例", "常见问题", "价格解释", "信任建设", "本地生活"],
+    lead_keywords: ["预约", "多少钱", "怎么联系", "地址", "营业时间", "可以咨询吗"],
+    negative_keywords: ["广告", "不需要", "骗子", "无聊", "别推给我"]
+  },
+  {
+    category_id: "finance_insurance",
+    category_name: "金融保险",
+    content_angles: ["保险误区", "贷款知识", "理财规划", "家庭风险", "新移民财务", "案例拆解"],
+    lead_keywords: ["保险", "贷款", "利率", "保费", "怎么申请", "可以咨询吗", "想了解"],
+    negative_keywords: ["广告", "不需要", "骗子", "无聊", "别推给我"]
+  }
+];
+
+export function getCategory(categoryId: string): ClientCategory {
+  const category = categories.find((item) => item.category_id === categoryId);
+  if (!category) {
+    throw new Error(`Unknown category_id: ${categoryId}`);
+  }
+  return category;
+}

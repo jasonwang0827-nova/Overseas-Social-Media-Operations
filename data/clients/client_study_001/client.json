@@ -1,0 +1,37 @@
+{
+  "client_id": "client_study_001",
+  "client_name": "ABC Study Abroad",
+  "industry": "study_abroad",
+  "business_type": "study_abroad_consulting",
+  "region": "Canada",
+  "language": [
+    "zh",
+    "en"
+  ],
+  "target_audience": [
+    "Chinese students",
+    "Chinese parents",
+    "international students",
+    "new immigrants"
+  ],
+  "service_keywords": [
+    "怎么申请",
+    "费用多少",
+    "可以咨询吗",
+    "转学分",
+    "签证",
+    "留学",
+    "移民",
+    "我孩子",
+    "想了解",
+    "怎么联系"
+  ],
+  "brand_tone": "professional, trustworthy, friendly",
+  "lead_goal": [
+    "book consultation",
+    "DM inquiry",
+    "WhatsApp contact",
+    "website visit"
+  ],
+  "status": "active"
+}
