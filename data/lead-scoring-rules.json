@@ -1,0 +1,87 @@
+{
+  "study_abroad": {
+    "high_intent_keywords": ["可以咨询吗", "怎么申请", "怎么联系", "预约", "转学分", "签证被拒", "费用多少", "多少钱", "my child", "consultation", "apply", "visa refused", "transfer"],
+    "medium_intent_keywords": ["想了解", "留学", "签证", "学校", "申请", "费用", "college", "university", "study", "visa", "price", "cost"],
+    "negative_keywords": ["骗子", "不需要", "别推", "广告", "spam", "scam", "not interested"],
+    "question_patterns": ["?", "？", "怎么", "可以", "多少", "how", "what", "can", "price", "cost"],
+    "score_rules": {
+      "base_score": 20,
+      "high_intent_points": 25,
+      "medium_intent_points": 12,
+      "question_points": 10,
+      "negative_points": -60,
+      "spam_threshold": 10,
+      "qualified_threshold": 60,
+      "high_score_threshold": 80
+    },
+    "default_recommended_actions": ["reply_with_question", "ask_for_dm", "book_consultation"]
+  },
+  "real_estate": {
+    "high_intent_keywords": ["买房", "卖房", "估价", "贷款", "看房", "预约", "how much", "mortgage", "buy", "sell", "valuation", "viewing"],
+    "medium_intent_keywords": ["房价", "社区", "投资", "condo", "house", "price", "market", "neighborhood"],
+    "negative_keywords": ["骗子", "广告", "不需要", "spam", "scam", "not interested"],
+    "question_patterns": ["?", "？", "怎么", "可以", "多少", "how", "what", "can", "price"],
+    "score_rules": {
+      "base_score": 20,
+      "high_intent_points": 25,
+      "medium_intent_points": 12,
+      "question_points": 10,
+      "negative_points": -60,
+      "spam_threshold": 10,
+      "qualified_threshold": 60,
+      "high_score_threshold": 80
+    },
+    "default_recommended_actions": ["reply_with_question", "ask_for_dm", "book_consultation"]
+  },
+  "brand_global": {
+    "high_intent_keywords": ["代运营", "广告投放", "报价", "怎么合作", "预约", "consultation", "agency", "quote", "pricing", "book a call"],
+    "medium_intent_keywords": ["获客", "品牌出海", "内容运营", "社媒", "lead", "marketing", "social media", "campaign"],
+    "negative_keywords": ["骗子", "广告", "不需要", "spam", "scam", "not interested"],
+    "question_patterns": ["?", "？", "怎么", "可以", "多少", "how", "what", "can", "price"],
+    "score_rules": {
+      "base_score": 20,
+      "high_intent_points": 25,
+      "medium_intent_points": 12,
+      "question_points": 10,
+      "negative_points": -60,
+      "spam_threshold": 10,
+      "qualified_threshold": 60,
+      "high_score_threshold": 80
+    },
+    "default_recommended_actions": ["reply_with_question", "ask_for_dm", "book_consultation"]
+  },
+  "local_service": {
+    "high_intent_keywords": ["预约", "报价", "怎么联系", "available", "book", "quote", "price"],
+    "medium_intent_keywords": ["服务", "附近", "时间", "service", "near me", "schedule"],
+    "negative_keywords": ["骗子", "广告", "不需要", "spam", "scam", "not interested"],
+    "question_patterns": ["?", "？", "怎么", "可以", "多少", "how", "what", "can", "price"],
+    "score_rules": {
+      "base_score": 20,
+      "high_intent_points": 25,
+      "medium_intent_points": 12,
+      "question_points": 10,
+      "negative_points": -60,
+      "spam_threshold": 10,
+      "qualified_threshold": 60,
+      "high_score_threshold": 80
+    },
+    "default_recommended_actions": ["reply_with_question", "ask_for_dm", "book_consultation"]
+  },
+  "finance_insurance": {
+    "high_intent_keywords": ["贷款", "保险", "利率", "报价", "预约", "mortgage", "insurance", "rate", "quote", "book"],
+    "medium_intent_keywords": ["信用", "保单", "理财", "credit", "policy", "finance"],
+    "negative_keywords": ["骗子", "广告", "不需要", "spam", "scam", "not interested"],
+    "question_patterns": ["?", "？", "怎么", "可以", "多少", "how", "what", "can", "price", "rate"],
+    "score_rules": {
+      "base_score": 20,
+      "high_intent_points": 25,
+      "medium_intent_points": 12,
+      "question_points": 10,
+      "negative_points": -60,
+      "spam_threshold": 10,
+      "qualified_threshold": 60,
+      "high_score_threshold": 80
+    },
+    "default_recommended_actions": ["reply_with_question", "ask_for_dm", "book_consultation"]
+  }
+}

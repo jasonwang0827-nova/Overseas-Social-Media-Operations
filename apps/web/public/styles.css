@@ -160,6 +160,10 @@ input {
   color: var(--text);
 }
 
+a {
+  color: var(--blue);
+}
+
 select,
 input {
   height: 40px;
@@ -192,6 +196,11 @@ input {
   color: var(--ink);
 }
 
+.action-button.danger {
+  background: var(--red);
+  color: #fff;
+}
+
 .workspace {
   padding: 26px 32px 38px;
 }
@@ -208,6 +217,11 @@ input {
 .summary-grid {
   grid-template-columns: repeat(6, minmax(120px, 1fr));
   margin-bottom: 24px;
+}
+
+.summary-grid.small-summary {
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  margin: 14px 0;
 }
 
 .metric,
@@ -250,7 +264,7 @@ input {
 }
 
 .content-grid {
-  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .lead-grid {
@@ -260,6 +274,89 @@ input {
 .row-card,
 .lead-card {
   padding: 16px;
+}
+
+.row-card-head,
+.variant-meta,
+.filter-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.compact-form {
+  grid-template-columns: minmax(220px, 360px) auto;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.compact-form .form-actions {
+  grid-column: auto;
+}
+
+.filter-row {
+  justify-content: flex-start;
+  margin-top: 10px;
+}
+
+.filter-row label {
+  display: grid;
+  gap: 6px;
+}
+
+.filter-row label span,
+.variant-editor label span {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.variant-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.variant-editor {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.variant-editor label {
+  display: grid;
+  gap: 6px;
+}
+
+.variant-editor textarea {
+  min-height: 120px;
+}
+
+.lead-editor {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.lead-editor label {
+  display: grid;
+  gap: 6px;
+}
+
+.lead-editor label span {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.lead-editor .wide {
+  grid-column: span 3;
 }
 
 .muted {
@@ -292,6 +389,12 @@ input {
 .status.active,
 .status.connected,
 .status.mock,
+.status.true,
+.status.api_ready,
+.status.publish_api,
+.status.lead_api,
+.status.analytics_true,
+.status.reply_true,
 .status.posting_on,
 .status.leads_on {
   background: #dcfce7;
@@ -300,12 +403,23 @@ input {
 
 .status.scheduled,
 .status.ready_for_review,
+.status.needs_manual_review,
+.status.limited,
+.status.publish_limited,
+.status.lead_limited,
+.status.analytics_limited,
+.status.reply_limited,
 .status.new {
   background: #e0f2fe;
   color: var(--blue);
 }
 
 .status.failed,
+.status.false,
+.status.publish_none,
+.status.lead_none,
+.status.analytics_false,
+.status.reply_false,
 .status.spam {
   background: #fee2e2;
   color: var(--red);
@@ -316,10 +430,29 @@ input {
 .status.inactive,
 .status.disconnected,
 .status.expired,
+.status.publish_draft,
+.status.manual_workflow,
+.status.oauth_required,
+.status.app_review,
+.status.business_required,
+.status.no_oauth,
+.status.no_app_review,
+.status.no_business_required,
 .status.posting_off,
 .status.leads_off {
   background: #fef3c7;
   color: var(--amber);
+}
+
+.capability-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 220px;
+}
+
+.capability-table td {
+  vertical-align: top;
 }
 
 .table {

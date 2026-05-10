@@ -320,7 +320,46 @@ Suggested schema:
 }
 ```
 
-## 9. Validation Checklist
+## 9. Publish Frequency Rules
+
+Publishing frequency is not a fixed system decision. OpenClaw must ask Jason before changing publishing cadence.
+
+Global publish rules live in:
+
+```text
+data/publish-rules.json
+```
+
+OpenClaw may update this file only after asking Jason questions such as:
+
+```text
+How many posts per account per day for each platform?
+What minimum interval should be kept between posts?
+What time windows are allowed for each platform?
+What default timezone should be used?
+Which platforms can publish text-only content?
+```
+
+Fields OpenClaw can update:
+
+```json
+{
+  "max_posts_per_account_per_day": 2,
+  "min_minutes_between_posts": 240,
+  "allowed_time_windows": [["09:00", "20:00"]],
+  "default_timezone": "America/Toronto",
+  "supports_text_only": true
+}
+```
+
+Rules:
+
+- Do not invent publish frequency if Jason has not answered.
+- Do not change `data/publish-rules.json` during basic client intake unless Jason explicitly asks.
+- After changing publish rules, run `npm run typecheck`.
+- Report exactly which platform rules changed.
+
+## 10. Validation Checklist
 
 After writing files, OpenClaw must verify:
 
@@ -345,7 +384,7 @@ npm run typecheck
 
 If typecheck fails, do not continue to account/content generation. Report the failure.
 
-## 10. What OpenClaw Must Not Do During Intake
+## 11. What OpenClaw Must Not Do During Intake
 
 During client intake, do not:
 
@@ -362,7 +401,7 @@ write content directly into publish-queue
 
 Client intake only creates the client foundation.
 
-## 11. Next Workflow After Intake
+## 12. Next Workflow After Intake
 
 After the client is created, the next steps are:
 
@@ -379,7 +418,7 @@ After the client is created, the next steps are:
 10. Generate weekly report
 ```
 
-## 12. Short Prompt For OpenClaw
+## 13. Short Prompt For OpenClaw
 
 Use this prompt when asking OpenClaw to perform background client intake:
 

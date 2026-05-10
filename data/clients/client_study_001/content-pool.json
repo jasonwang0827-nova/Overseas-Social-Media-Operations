@@ -3,9 +3,9 @@
     "content_id": "content_20260508_001",
     "client_id": "client_study_001",
     "category_id": "study_abroad",
-    "content_theme": "college_transfer",
+    "content_theme": "pain_point",
     "content_type": "short_video",
-    "content_angle": "pain_point",
+    "content_angle": "problem_solution",
     "title": "加拿大大学转学分，很多家长一开始就搞错了",
     "hook": "很多家长以为转学分只是换学校，其实最容易亏的是这些学分。",
     "main_points": [
@@ -24,6 +24,8 @@
     "media_assets": [],
     "status": "approved",
     "created_by": "openclaw",
-    "approved_by_human": true
+    "approved_by_human": true,
+    "created_at": "2026-05-10T00:31:56.181Z",
+    "updated_at": "2026-05-10T00:31:56.181Z"
   }
 ]

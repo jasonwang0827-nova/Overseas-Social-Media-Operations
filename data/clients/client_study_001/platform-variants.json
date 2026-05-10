@@ -16,7 +16,13 @@
     "media_path": "data/clients/client_study_001/exports/instagram/college_transfer_instagram.mp4",
     "cta": "私信我，帮你判断能不能转。",
     "status": "approved",
-    "approval_status": "approved"
+    "approval_status": "approved",
+    "language": "zh",
+    "account_role": "expert_advisor",
+    "content_focus": "case_study",
+    "rejection_reason": null,
+    "created_at": "2026-05-10T00:31:56.181Z",
+    "updated_at": "2026-05-10T00:31:56.181Z"
   },
   {
     "variant_id": "variant_tk_001",
@@ -35,7 +41,13 @@
     "media_path": "data/clients/client_study_001/exports/tiktok/college_transfer_tiktok.mp4",
     "cta": "想知道你的情况能不能转，评论区打“转学分”。",
     "status": "approved",
-    "approval_status": "approved"
+    "approval_status": "approved",
+    "language": "zh",
+    "account_role": "expert_advisor",
+    "content_focus": "case_study",
+    "rejection_reason": null,
+    "created_at": "2026-05-10T00:31:56.181Z",
+    "updated_at": "2026-05-10T00:31:56.181Z"
   },
   {
     "variant_id": "variant_fb_001",
@@ -53,6 +65,12 @@
     "media_path": "data/clients/client_study_001/exports/facebook/college_transfer_facebook.mp4",
     "cta": "想知道你的情况能不能转学分，可以私信我。",
     "status": "approved",
-    "approval_status": "approved"
+    "approval_status": "approved",
+    "language": "zh",
+    "account_role": "expert_advisor",
+    "content_focus": "case_study",
+    "rejection_reason": null,
+    "created_at": "2026-05-10T00:31:56.181Z",
+    "updated_at": "2026-05-10T00:31:56.181Z"
   }
 ]

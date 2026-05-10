@@ -1,0 +1,73 @@
+{
+  "client_id": "client_study_001",
+  "date": "2026-05-10",
+  "publish_count": 0,
+  "platform_status": {
+    "instagram": {
+      "published": 1
+    }
+  },
+  "failed_tasks": [],
+  "interaction_count": 0,
+  "new_leads": 0,
+  "qualified_leads": 0,
+  "high_score_leads": [
+    {
+      "lead_id": "lead_20260508182605_5llu",
+      "client_id": "client_study_001",
+      "platform": "instagram",
+      "account_id": "ig_study_001",
+      "source_type": "comment",
+      "source_post_id": "platform_post_mock",
+      "source_url": null,
+      "user_handle": "web_demo_lead",
+      "user_display_name": "Web Demo Lead",
+      "message_text": "想了解加拿大转学分，怎么联系顾问？",
+      "detected_intent": "high_intent",
+      "lead_score": 92,
+      "lead_stage": "qualified",
+      "recommended_reply": "谢谢你留言。可以的，你可以先补充一下具体需求，ABC Study Abroad 会帮你判断下一步是否适合预约咨询。",
+      "human_review_required": true,
+      "assigned_to": "jason",
+      "created_at": "2026-05-08T18:26:05.834Z",
+      "next_follow_up_at": null,
+      "last_contacted_at": null,
+      "contact_method": "unknown",
+      "lead_notes": [],
+      "updated_at": "2026-05-10T01:11:07.901Z"
+    }
+  ],
+  "spam_count": 0,
+  "reply_drafts_generated": 0,
+  "follow_ups_due": [],
+  "converted_leads": 0,
+  "human_follow_up_required": [
+    {
+      "lead_id": "lead_20260508182605_5llu",
+      "client_id": "client_study_001",
+      "platform": "instagram",
+      "account_id": "ig_study_001",
+      "source_type": "comment",
+      "source_post_id": "platform_post_mock",
+      "source_url": null,
+      "user_handle": "web_demo_lead",
+      "user_display_name": "Web Demo Lead",
+      "message_text": "想了解加拿大转学分，怎么联系顾问？",
+      "detected_intent": "high_intent",
+      "lead_score": 92,
+      "lead_stage": "qualified",
+      "recommended_reply": "谢谢你留言。可以的，你可以先补充一下具体需求，ABC Study Abroad 会帮你判断下一步是否适合预约咨询。",
+      "human_review_required": true,
+      "assigned_to": "jason",
+      "created_at": "2026-05-08T18:26:05.834Z",
+      "next_follow_up_at": null,
+      "last_contacted_at": null,
+      "contact_method": "unknown",
+      "lead_notes": [],
+      "updated_at": "2026-05-10T01:11:07.901Z"
+    }
+  ],
+  "top_content_themes": {
+    "pain_point": 1
+  }
+}

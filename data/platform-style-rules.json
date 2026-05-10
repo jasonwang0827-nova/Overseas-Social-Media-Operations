@@ -1,0 +1,44 @@
+{
+  "instagram": {
+    "formats": ["reel", "carousel", "image_post"],
+    "tone": "visual, concise, polished, aspirational",
+    "caption_style": "short hook, scannable value, friendly CTA",
+    "hashtag_count": 5,
+    "cta_style": "DM or save/share"
+  },
+  "tiktok": {
+    "formats": ["short_video"],
+    "tone": "direct, conversational, fast hook, native",
+    "caption_style": "plainspoken hook with comment keyword CTA",
+    "hashtag_count": 4,
+    "cta_style": "comment keyword or follow for more"
+  },
+  "facebook": {
+    "formats": ["page_post", "long_post"],
+    "tone": "trustworthy, explanatory, community friendly",
+    "caption_style": "context paragraph, bullet points, soft CTA",
+    "hashtag_count": 3,
+    "cta_style": "message page or book consultation"
+  },
+  "x": {
+    "formats": ["post", "thread"],
+    "tone": "sharp, concise, timely, point-of-view driven",
+    "caption_style": "one clear insight with short CTA",
+    "hashtag_count": 2,
+    "cta_style": "reply or DM"
+  },
+  "linkedin": {
+    "formats": ["company_post"],
+    "tone": "professional, B2B, evidence-led",
+    "caption_style": "business context, insight, credibility CTA",
+    "hashtag_count": 3,
+    "cta_style": "connect or book a call"
+  },
+  "youtube": {
+    "formats": ["short", "community_post"],
+    "tone": "educational, searchable, clear promise",
+    "caption_style": "search-friendly title and direct value",
+    "hashtag_count": 3,
+    "cta_style": "subscribe or watch next"
+  }
+}

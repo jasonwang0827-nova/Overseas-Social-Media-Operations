@@ -1,7 +1,9 @@
 export type Platform = "facebook" | "instagram" | "tiktok" | "x" | "linkedin" | "youtube";
-export type Status = "draft" | "ready_for_review" | "approved" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
+export type Status = "draft" | "ready_for_review" | "approved" | "scheduled" | "publishing" | "published" | "failed" | "blocked" | "needs_manual_review" | "cancelled";
 export type ApprovalStatus = "draft" | "ready_for_review" | "approved" | "rejected";
 export type LeadStage = "new" | "qualified" | "replied" | "waiting_response" | "booked" | "converted" | "not_interested" | "spam";
+export type LeadSourceType = "comment" | "dm" | "form" | "manual" | "email" | "whatsapp";
+export type CapabilityValue = boolean | "limited";
 export type AccountStatus = "active" | "inactive" | "archived";
 export type AuthStatus = "connected" | "mock" | "disconnected" | "expired" | "error";
 export type AccountRole =
@@ -22,6 +24,28 @@ export type ContentFocus =
   | "community_engagement"
   | "sales_conversion"
   | "customer_support";
+export type ContentTheme =
+  | "brand_intro"
+  | "product_intro"
+  | "pain_point"
+  | "case_study"
+  | "faq"
+  | "comparison"
+  | "myth_busting"
+  | "how_to"
+  | "checklist"
+  | "offer"
+  | "lead_magnet"
+  | "testimonial";
+export type ContentAngle =
+  | "education"
+  | "problem_solution"
+  | "trust_building"
+  | "conversion"
+  | "authority"
+  | "urgency"
+  | "story"
+  | "objection_handling";
 
 export interface Client {
   client_id: string;
@@ -62,9 +86,31 @@ export interface PlatformAccount {
   lead_tracking_enabled: boolean;
   auth_status: AuthStatus;
   status: AccountStatus;
+  capability_override?: Partial<PlatformCapabilities>;
   notes: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface PlatformCapabilities {
+  can_publish_text: CapabilityValue;
+  can_publish_image: CapabilityValue;
+  can_publish_video: CapabilityValue;
+  can_publish_carousel: CapabilityValue;
+  can_publish_story: CapabilityValue;
+  can_publish_reel: CapabilityValue;
+  can_publish_draft: CapabilityValue;
+  can_read_comments: CapabilityValue;
+  can_read_dm: CapabilityValue;
+  can_fetch_analytics: CapabilityValue;
+  can_auto_reply: CapabilityValue;
+  supports_mock: CapabilityValue;
+  supports_real_api: CapabilityValue;
+  requires_oauth: CapabilityValue;
+  requires_app_review: CapabilityValue;
+  requires_business_account: CapabilityValue;
+  requires_human_review: CapabilityValue;
+  notes: string;
 }
 
 export interface MediaAsset {
@@ -76,9 +122,9 @@ export interface ContentAsset {
   content_id: string;
   client_id: string;
   category_id: string;
-  content_theme: string;
+  content_theme: ContentTheme;
   content_type: "short_video" | "image_post" | "text_post" | "carousel";
-  content_angle: string;
+  content_angle: ContentAngle;
   title: string;
   hook: string;
   main_points: string[];
@@ -90,6 +136,8 @@ export interface ContentAsset {
   status: Status;
   created_by: string;
   approved_by_human: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface PlatformVariant {
@@ -103,8 +151,14 @@ export interface PlatformVariant {
   hashtags: string[];
   media_path: string | null;
   cta: string;
+  language: string;
+  account_role: AccountRole;
+  content_focus: ContentFocus;
   status: Status;
   approval_status: ApprovalStatus;
+  rejection_reason: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface PublishTask {
@@ -121,14 +175,28 @@ export interface PublishTask {
   platform_post_id: string | null;
   published_at: string | null;
   error_message: string | null;
+  blocked_reason: string | null;
   retry_count: number;
   max_retry: number;
   last_error: string | null;
   next_retry_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
-export interface PublishRecord extends PublishTask {
-  record_id: string;
+export interface PublishRecord {
+  publish_record_id: string;
+  publish_task_id: string;
+  client_id: string;
+  content_id: string;
+  variant_id: string;
+  platform: Platform;
+  account_id: string;
+  platform_post_id: string;
+  published_at: string;
+  status: "published";
+  publish_mode: "mock" | "api" | "manual";
+  mock_url: string;
 }
 
 export interface Lead {
@@ -136,8 +204,10 @@ export interface Lead {
   client_id: string;
   platform: Platform;
   account_id: string;
-  source_type: "comment" | "dm" | "mention" | "reaction";
+  source_type: LeadSourceType;
+  source_mode: "manual" | "mock" | "api" | "csv";
   source_post_id: string | null;
+  source_url: string | null;
   user_handle: string;
   user_display_name: string;
   message_text: string;
@@ -152,14 +222,20 @@ export interface Lead {
   contact_method: "comment" | "dm" | "email" | "phone" | "whatsapp" | "wechat" | "unknown";
   lead_notes: string[];
   created_at: string;
+  updated_at: string;
 }
 
 export interface ReplyDraft {
   reply_draft_id: string;
   lead_id: string;
   client_id: string;
+  platform: Platform;
+  account_id: string;
   draft_text: string;
+  tone: string;
   approval_status: ApprovalStatus;
+  rejection_reason: string | null;
   sent_status: "not_sent" | "sent" | "failed";
   created_at: string;
+  updated_at: string;
 }

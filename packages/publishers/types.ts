@@ -4,6 +4,7 @@ export interface PublishResult {
   ok: boolean;
   platform_post_id: string | null;
   error_message: string | null;
+  mock_url?: string | null;
 }
 
 export interface Publisher {
