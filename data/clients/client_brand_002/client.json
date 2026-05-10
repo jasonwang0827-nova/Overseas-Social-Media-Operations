@@ -4,7 +4,9 @@
   "industry": "brand_global",
   "business_type": "adult_product_oem_odm_manufacturer",
   "region": "Canada, US",
-  "language": ["en"],
+  "language": [
+    "en"
+  ],
   "target_audience": [
     "Adult product brands seeking OEM/ODM partners",
     "North American retailers and distributors",
@@ -23,5 +25,11 @@
     "wholesale partnerships",
     "factory visit inquiries"
   ],
-  "status": "active"
+  "status": "active",
+  "monthly_api_budget": 1000,
+  "budget_warn_at": 700,
+  "budget_block_at": 950,
+  "max_cost_per_command": 100,
+  "default_x_search_limit": 50,
+  "default_kol_discovery_limit": 50
 }

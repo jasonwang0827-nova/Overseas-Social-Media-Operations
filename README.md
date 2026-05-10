@@ -8,17 +8,19 @@ This MVP is organized around:
 Client -> Business Category -> Target Audience -> Content Strategy -> Platform Accounts -> Content Pool -> Publish Queue -> Lead Management
 ```
 
-The first version uses local JSON files under `data/clients/<client_id>/` and mock publishers for Facebook, Instagram, TikTok, and X. YouTube is reserved as an adapter folder only.
+The first version uses local JSON files under `data/clients/<client_id>/` and mock publishers for Facebook, Instagram, TikTok, and X. X also has a controlled official API adapter for text-only publishing. YouTube is reserved as an adapter folder only.
 
 Global client category templates live in `data/categories.json` and are copied into each client directory as `categories.json`.
 Platform writing rules live in `data/platform-style-rules.json` so one content asset can become different account-specific variants.
 Platform capability rules live in `data/platform-capabilities.json` so the system can decide whether an action should use API, mock, or manual workflow before publishing or importing leads.
+X API credentials can be stored locally in `XAPI.env`; this file is ignored by Git and should never be committed.
 
 ## Quick Start
 
 ```bash
 npm install
 npm run demo:seed
+npm run demo:e2e
 npm run web:dev
 ```
 
@@ -35,6 +37,115 @@ npm run publish:run -- --client_id client_study_001
 npm run lead:score -- --client_id client_study_001
 npm run report:daily -- --client_id client_study_001
 npm run report:weekly -- --client_id client_study_001
+npm run demo:e2e
+```
+
+## X API Adapter
+
+The X adapter supports credential checks, dry-run publishing, and controlled live text publishing through `POST /2/tweets`.
+
+Safe mode is the default:
+
+Create a local `XAPI.env` file:
+
+```bash
+X_API_KEY=your_consumer_key
+X_API_KEY_SECRET=your_consumer_secret
+X_ACCESS_TOKEN=your_access_token
+X_ACCESS_TOKEN_SECRET=your_access_token_secret
+X_API_DRY_RUN=true
+```
+
+Dry-run test:
+
+```bash
+npm run x:publish:dry-run
+```
+
+Live test, after setting `X_API_DRY_RUN=false` or allowing the script to override it for this command:
+
+```bash
+npm run x:publish:live -- --confirm LIVE
+```
+
+The live command prepares one short, safe, approved X text variant under `client_demo_001`, then publishes only that task. It refuses live publishing unless the command includes `--confirm LIVE`.
+
+Official API publishing is blocked unless all of these are true:
+
+- Content asset is approved.
+- Platform variant is approved and has `status = approved`.
+- Publish task is scheduled.
+- Account platform is `x`.
+- Account `auth_status = connected`.
+- Platform/account capability allows real API text publishing.
+- `requires_human_review = false`.
+
+Successful live X records store the returned X post ID plus `post_url` in `publish-records.json`. Failed attempts update `last_error`, `retry_count`, and `next_retry_at`; readiness failures are marked `blocked` with `blocked_reason`.
+
+This phase does not implement auto-reply, auto-DM, or real API publishing for Instagram, TikTok, Facebook, LinkedIn, or YouTube.
+
+## X Platform Module
+
+Phase 1 is feature-complete but manual-gated. The system can collect, classify, score, and draft, but it must not automatically publish, reply, DM, comment, follow, or unfollow.
+
+Phase roadmap:
+
+- Phase 1: full features, manual actions. Search, KOL discovery, lead discovery, mentions, DM reading when permissions allow, dry-run publishing, and manual-approved publishing.
+- Phase 2: semi-automation. Scheduled KOL search, scheduled lead search, automatic scoring, automatic draft generation, human confirmation.
+- Phase 3: low-risk automation. Auto-publish already-approved content, auto-generate reports, auto-remind follow-ups, auto-archive low-value leads.
+- Phase 4: high-risk automation. Auto-reply, auto-DM, auto-comment, and auto-follow only after explicit enablement and review.
+
+X module commands:
+
+```bash
+npm run x:research:search -- --client_id client_demo_001 --mode mock
+npm run x:kol:discover -- --client_id client_demo_001 --mode mock
+npm run x:competitor:mine -- --client_id client_demo_001 --username competitor_demo --mode mock
+npm run x:lead:discover -- --client_id client_demo_001 --mode mock
+npm run x:engagement:sync -- --client_id client_demo_001 --mode mock
+npm run x:dm:sync -- --client_id client_demo_001 --mode mock
+npm run x:report -- --client_id client_demo_001
+```
+
+Use `--mode api` on read-only X commands to attempt real X API reads when the account and credentials allow it. API reads use official X endpoints such as recent post search, user lookup, user mentions, and DM events. If permissions are missing, stay in `--mode mock` or manual workflow.
+
+X API cost controls:
+
+- `X_API_DRY_RUN=true` remains the default safe setting for publishing.
+- X research/KOL/lead/engagement commands cap post reads at 100 results; KOL discovery defaults to 50.
+- X KOL discovery supports `--depth light` and `--depth deep`; light is the default and reads search posts plus candidate profiles only, while deep also scores recent posts.
+- X KOL deep scoring fetches each candidate profile plus recent posts, defaults to 25 recent posts per author, and saves only prospects above the threshold.
+- X lead discovery scores buyer intent, industry match, urgency, negative/spam risk, and reply value before saving candidates and draft replies.
+- Competitor mining only reads the competitor profile and recent posts by default. Followers/following mining is reserved for a later manual-trigger workflow.
+- Each client can define `monthly_api_budget`, `budget_warn_at`, `budget_block_at`, `max_cost_per_command`, `default_x_search_limit`, and `default_kol_discovery_limit` in `client.json`.
+- Read commands support `--estimate-only` to print and save the projected cost without calling X.
+- GET responses are cached for 24 hours under `data/cache/x-api/` to avoid repeat API charges.
+- Every X command prints `estimated_cost`, `api_calls`, and `cache_hits`.
+- Every X query appends a non-overwriting record to `x-query-history.json` so historical searches can be analyzed later.
+- The X Workspace UI includes Budget & Query History so operators can review budget usage, estimate-only runs, and blocked attempts without triggering API calls.
+- Detailed operator SOP: `docs/x-platform-sop.md`.
+
+X module data files:
+
+- `x-research-posts.json`: keyword research posts.
+- `kol-prospects.json`: KOL prospects from keyword or competitor discovery.
+- `lead-candidates.json`: buying-intent or help-intent candidates.
+- `x-engagement-inbox.json`: mentions, replies, quote-style interactions, and DM inbox items.
+- `x-query-history.json`: append-only query history for research, KOL discovery, competitor mining, leads, engagement, and DM reads.
+- `x-api-usage.json`: monthly API usage ledger for budget checks.
+- `reports/x/<date>.json`: X-specific daily operating report.
+
+All X outbound automation account settings default to `false`:
+
+```json
+{
+  "auto_publish_enabled": false,
+  "auto_reply_enabled": false,
+  "auto_dm_enabled": false,
+  "auto_follow_enabled": false,
+  "auto_kol_discovery_enabled": false,
+  "auto_lead_discovery_enabled": false
+}
 ```
 
 ## Web UI
@@ -122,7 +233,7 @@ npm run report:weekly -- --client_id client_study_001
 - Lead scoring uses `data/lead-scoring-rules.json` by client category.
 - Lead import checks account ownership, `lead_tracking_enabled`, account status, and platform comment/DM read capability.
 - Leads include `source_mode: api | manual | mock | csv`; unsupported API reads can still be imported manually.
-- Publish records include `publish_mode: mock | api | manual`.
+- Publish records include `publish_mode: mock | api | manual` and may include `post_url` for live API posts.
 - Reply drafts are generated for human review only. `approved` means ready for manual copy/use, not sent by the system.
 - The system does not auto-reply or auto-send DMs in this stage.
 - Every platform account must belong to a `client_id`.

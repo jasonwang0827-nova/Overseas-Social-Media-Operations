@@ -1,0 +1,36 @@
+[
+  {
+    "engagement_id": "mention_mock_x_post__maple_growth_x_0",
+    "client_id": "client_demo_001",
+    "platform": "x",
+    "account_id": "x_demo_001",
+    "source_type": "mention",
+    "source_id": "mock_x_post__maple_growth_x_0",
+    "source_url": "https://x.com/mock_x_user_0/status/mock_x_post_0",
+    "user_id": "mock_author_0",
+    "username": "mock_x_user_0",
+    "text": "@maple_growth_x - looking for recommendations and practical next steps for overseas growth.",
+    "classification": "lead",
+    "lead_score": 40,
+    "action_status": "manually_completed",
+    "saved_at": "2026-05-10T19:33:20.215Z",
+    "updated_at": "2026-05-10T19:33:31.745Z"
+  },
+  {
+    "engagement_id": "mention_mock_x_post_need_help_1",
+    "client_id": "client_demo_001",
+    "platform": "x",
+    "account_id": "x_demo_001",
+    "source_type": "mention",
+    "source_id": "mock_x_post_need_help_1",
+    "source_url": "https://x.com/mock_x_user_1/status/mock_x_post_1",
+    "user_id": "mock_author_1",
+    "username": "mock_x_user_1",
+    "text": "need help - looking for recommendations and practical next steps for overseas growth.",
+    "classification": "lead",
+    "lead_score": 40,
+    "action_status": "suggested",
+    "saved_at": "2026-05-10T19:33:20.215Z",
+    "updated_at": "2026-05-10T19:33:20.215Z"
+  }
+]

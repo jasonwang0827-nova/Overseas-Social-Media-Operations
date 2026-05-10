@@ -9,7 +9,9 @@ export function createMockPublisher(platform: Platform): Publisher {
         ok: true,
         platform_post_id: platformPostId,
         error_message: null,
-        mock_url: `https://mock.social/${platform}/${platformPostId}`
+        publish_mode: "mock",
+        mock_url: `https://mock.social/${platform}/${platformPostId}`,
+        post_url: `https://mock.social/${platform}/${platformPostId}`
       };
     }
   };

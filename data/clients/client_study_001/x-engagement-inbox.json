@@ -1,0 +1,53 @@
+[
+  {
+    "engagement_id": "mention_mock_x_post__abc_study_x_0",
+    "client_id": "client_study_001",
+    "platform": "x",
+    "account_id": "x_study_001",
+    "source_type": "mention",
+    "source_id": "mock_x_post__abc_study_x_0",
+    "source_url": "https://x.com/mock_x_user_0/status/mock_x_post_0",
+    "user_id": "mock_author_0",
+    "username": "mock_x_user_0",
+    "text": "@abc_study_x - looking for recommendations and practical next steps for overseas growth.",
+    "classification": "lead",
+    "lead_score": 40,
+    "action_status": "suggested",
+    "saved_at": "2026-05-10T14:35:16.731Z",
+    "updated_at": "2026-05-10T14:35:16.731Z"
+  },
+  {
+    "engagement_id": "mention_mock_x_post_need_help_1",
+    "client_id": "client_study_001",
+    "platform": "x",
+    "account_id": "x_study_001",
+    "source_type": "mention",
+    "source_id": "mock_x_post_need_help_1",
+    "source_url": "https://x.com/mock_x_user_1/status/mock_x_post_1",
+    "user_id": "mock_author_1",
+    "username": "mock_x_user_1",
+    "text": "need help - looking for recommendations and practical next steps for overseas growth.",
+    "classification": "lead",
+    "lead_score": 40,
+    "action_status": "suggested",
+    "saved_at": "2026-05-10T14:35:16.731Z",
+    "updated_at": "2026-05-10T14:35:16.731Z"
+  },
+  {
+    "engagement_id": "dm_dm_mock_1778423717154",
+    "client_id": "client_study_001",
+    "platform": "x",
+    "account_id": "x_study_001",
+    "source_type": "dm",
+    "source_id": "dm_mock_1778423717154",
+    "source_url": "",
+    "user_id": "mock_dm_user",
+    "username": "mock_dm_lead",
+    "text": "Need help with overseas social media lead generation. Can you share next steps?",
+    "classification": "lead",
+    "lead_score": 50,
+    "action_status": "suggested",
+    "saved_at": "2026-05-10T14:35:17.154Z",
+    "updated_at": "2026-05-10T14:35:17.154Z"
+  }
+]

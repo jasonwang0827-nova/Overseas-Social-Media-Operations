@@ -1,0 +1,87 @@
+[
+  {
+    "content_id": "content_demo_brand_intro_001",
+    "client_id": "client_demo_001",
+    "category_id": "brand_global",
+    "content_theme": "brand_intro",
+    "content_type": "text_post",
+    "content_angle": "trust_building",
+    "title": "Maple Growth Demo: 帮中国品牌把海外社媒变成线索系统",
+    "hook": "很多品牌出海第一步不是多发帖，而是先把客户、账号、内容和线索流程打通。",
+    "main_points": [
+      "先定义客户业务和目标人群",
+      "每个平台账号承担不同内容角色",
+      "内容资产先审核，再生成平台版本",
+      "发布后的评论和私信进入线索池"
+    ],
+    "cta": "想看你的品牌适合怎么搭海外社媒获客流程，可以私信我们。",
+    "language": "zh",
+    "target_audience": [
+      "Chinese founders",
+      "cross-border brands"
+    ],
+    "funnel_stage": "awareness",
+    "media_assets": [],
+    "status": "approved",
+    "created_by": "demo:seed",
+    "approved_by_human": true,
+    "created_at": "2026-05-10T09:00:00.000Z",
+    "updated_at": "2026-05-10T09:00:00.000Z"
+  },
+  {
+    "content_id": "content_demo_lead_generation_001",
+    "client_id": "client_demo_001",
+    "category_id": "brand_global",
+    "content_theme": "lead_magnet",
+    "content_type": "text_post",
+    "content_angle": "conversion",
+    "title": "Maple Growth Demo: 3 个信号判断海外社媒有没有带来真实线索",
+    "hook": "如果评论区和私信里开始出现预算、时间、怎么合作这些问题，就说明内容正在靠近成交。",
+    "main_points": [
+      "高意向词通常包含价格、方案、预约和联系方式",
+      "不同平台的线索质量要分开统计",
+      "回复草稿必须留给人工审核或夜间复盘",
+      "周报要能看出内容和线索之间的关系"
+    ],
+    "cta": "想要一份海外社媒线索检查清单，可以留言 checklist。",
+    "language": "zh",
+    "target_audience": [
+      "cross-border brands",
+      "local service businesses"
+    ],
+    "funnel_stage": "lead_generation",
+    "media_assets": [],
+    "status": "approved",
+    "created_by": "demo:seed",
+    "approved_by_human": true,
+    "created_at": "2026-05-10T09:00:00.000Z",
+    "updated_at": "2026-05-10T09:00:00.000Z"
+  },
+  {
+    "content_id": "content_x_api_test_20260510191729",
+    "client_id": "client_demo_001",
+    "category_id": "brand_global",
+    "content_theme": "brand_intro",
+    "content_type": "text_post",
+    "content_angle": "trust_building",
+    "title": "Social Ops Hub X API integration test",
+    "hook": "Social Ops Hub X API integration test 20260510191729. Controlled publish check from an approved workflow.",
+    "main_points": [
+      "Controlled adapter test",
+      "Approved content",
+      "Official API path"
+    ],
+    "cta": "",
+    "language": "en",
+    "target_audience": [
+      "internal operators"
+    ],
+    "funnel_stage": "trust_building",
+    "media_assets": [],
+    "status": "approved",
+    "created_by": "x:publish:test",
+    "approved_by_human": true,
+    "created_at": "2026-05-10T19:17:29.558Z",
+    "updated_at": "2026-05-10T19:17:29.558Z"
+  }
+]

@@ -26,5 +26,61 @@
     "sent_status": "not_sent",
     "created_at": "2026-05-08T18:26:05.835Z",
     "updated_at": "2026-05-08T18:26:05.835Z"
+  },
+  {
+    "reply_draft_id": "reply_20260510143516_o587",
+    "lead_id": "lead_20260510143516_2gc2",
+    "client_id": "client_study_001",
+    "platform": "x",
+    "account_id": "x_study_001",
+    "draft_text": "谢谢你的留言。你可以私信我们补充一下具体情况，ABC Study Abroad 会先帮你做初步判断。",
+    "tone": "professional, trustworthy, friendly",
+    "approval_status": "draft",
+    "rejection_reason": null,
+    "sent_status": "not_sent",
+    "created_at": "2026-05-10T14:35:16.291Z",
+    "updated_at": "2026-05-10T14:35:16.291Z"
+  },
+  {
+    "reply_draft_id": "reply_20260510143516_03hm",
+    "lead_id": "lead_20260510143516_49si",
+    "client_id": "client_study_001",
+    "platform": "x",
+    "account_id": "x_study_001",
+    "draft_text": "谢谢你的留言。你可以私信我们补充一下具体情况，ABC Study Abroad 会先帮你做初步判断。",
+    "tone": "professional, trustworthy, friendly",
+    "approval_status": "draft",
+    "rejection_reason": null,
+    "sent_status": "not_sent",
+    "created_at": "2026-05-10T14:35:16.291Z",
+    "updated_at": "2026-05-10T14:35:16.291Z"
+  },
+  {
+    "reply_draft_id": "reply_20260510143516_nvp3",
+    "lead_id": "lead_20260510143516_l1k7",
+    "client_id": "client_study_001",
+    "platform": "x",
+    "account_id": "x_study_001",
+    "draft_text": "谢谢你留言。可以的，你可以先补充一下具体需求，ABC Study Abroad 会帮你判断下一步是否适合预约咨询。",
+    "tone": "professional, trustworthy, friendly",
+    "approval_status": "draft",
+    "rejection_reason": null,
+    "sent_status": "not_sent",
+    "created_at": "2026-05-10T14:35:16.291Z",
+    "updated_at": "2026-05-10T14:35:16.291Z"
+  },
+  {
+    "reply_draft_id": "reply_20260510143516_7n7o",
+    "lead_id": "lead_20260510143516_eso6",
+    "client_id": "client_study_001",
+    "platform": "x",
+    "account_id": "x_study_001",
+    "draft_text": "谢谢你的留言。你可以私信我们补充一下具体情况，ABC Study Abroad 会先帮你做初步判断。",
+    "tone": "professional, trustworthy, friendly",
+    "approval_status": "draft",
+    "rejection_reason": null,
+    "sent_status": "not_sent",
+    "created_at": "2026-05-10T14:35:16.291Z",
+    "updated_at": "2026-05-10T14:35:16.291Z"
   }
 ]

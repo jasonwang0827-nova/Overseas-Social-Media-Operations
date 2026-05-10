@@ -1,0 +1,82 @@
+[
+  {
+    "candidate_id": "xlead_mock_x_post_need_help_with_1",
+    "client_id": "client_study_001",
+    "platform": "x",
+    "source_post_id": "mock_x_post_need_help_with_1",
+    "source_url": "https://x.com/mock_x_user_1/status/mock_x_post_1",
+    "user_id": "mock_author_1",
+    "username": "mock_x_user_1",
+    "display_name": "mock_x_user_1",
+    "message_text": "need help with - looking for recommendations and practical next steps for overseas growth.",
+    "matched_keywords": [
+      "looking for",
+      "need help with"
+    ],
+    "intent_score": 60,
+    "candidate_status": "suggested",
+    "recommended_reply": "Thanks for sharing this. Happy to help think through next steps; can you share a bit more context?",
+    "saved_at": "2026-05-10T14:35:16.291Z",
+    "updated_at": "2026-05-10T14:35:16.291Z"
+  },
+  {
+    "candidate_id": "xlead_mock_x_post_any_recommendation_2",
+    "client_id": "client_study_001",
+    "platform": "x",
+    "source_post_id": "mock_x_post_any_recommendation_2",
+    "source_url": "https://x.com/mock_x_user_2/status/mock_x_post_2",
+    "user_id": "mock_author_2",
+    "username": "mock_x_user_2",
+    "display_name": "mock_x_user_2",
+    "message_text": "any recommendation - looking for recommendations and practical next steps for overseas growth.",
+    "matched_keywords": [
+      "looking for",
+      "any recommendation"
+    ],
+    "intent_score": 60,
+    "candidate_status": "suggested",
+    "recommended_reply": "Thanks for sharing this. Happy to help think through next steps; can you share a bit more context?",
+    "saved_at": "2026-05-10T14:35:16.291Z",
+    "updated_at": "2026-05-10T14:35:16.291Z"
+  },
+  {
+    "candidate_id": "xlead_mock_x_post_visa_refused_3",
+    "client_id": "client_study_001",
+    "platform": "x",
+    "source_post_id": "mock_x_post_visa_refused_3",
+    "source_url": "https://x.com/mock_x_user_3/status/mock_x_post_3",
+    "user_id": "mock_author_3",
+    "username": "mock_x_user_3",
+    "display_name": "mock_x_user_3",
+    "message_text": "visa refused - looking for recommendations and practical next steps for overseas growth.",
+    "matched_keywords": [
+      "looking for",
+      "visa refused"
+    ],
+    "intent_score": 60,
+    "candidate_status": "suggested",
+    "recommended_reply": "Thanks for sharing this. Happy to help think through next steps; can you share a bit more context?",
+    "saved_at": "2026-05-10T14:35:16.291Z",
+    "updated_at": "2026-05-10T14:35:16.291Z"
+  },
+  {
+    "candidate_id": "xlead_mock_x_post_study_permit_help_4",
+    "client_id": "client_study_001",
+    "platform": "x",
+    "source_post_id": "mock_x_post_study_permit_help_4",
+    "source_url": "https://x.com/mock_x_user_4/status/mock_x_post_4",
+    "user_id": "mock_author_4",
+    "username": "mock_x_user_4",
+    "display_name": "mock_x_user_4",
+    "message_text": "study permit help - looking for recommendations and practical next steps for overseas growth.",
+    "matched_keywords": [
+      "looking for",
+      "study permit help"
+    ],
+    "intent_score": 60,
+    "candidate_status": "suggested",
+    "recommended_reply": "Thanks for sharing this. Happy to help think through next steps; can you share a bit more context?",
+    "saved_at": "2026-05-10T14:35:16.291Z",
+    "updated_at": "2026-05-10T14:35:16.291Z"
+  }
+]

@@ -486,6 +486,56 @@ input {
   margin-bottom: 16px;
 }
 
+.x-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.log-box {
+  max-height: 180px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0f172a;
+  color: #d1fae5;
+  white-space: pre-wrap;
+}
+
+.wide-input {
+  min-width: 320px;
+}
+
+.x-kol-notes {
+  width: 100%;
+  min-height: 64px;
+  margin-top: 8px;
+}
+
+.compact-table th,
+.compact-table td {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.detail-box {
+  margin-top: 12px;
+}
+
+.detail-box summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-weight: 800;
+}
+
+.error-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
 .lead-form {
   display: grid;
   grid-template-columns: 1fr auto;

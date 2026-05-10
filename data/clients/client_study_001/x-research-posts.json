@@ -1,0 +1,92 @@
+[
+  {
+    "post_id": "mock_x_post___0",
+    "text": "怎么申请 - looking for recommendations and practical next steps for overseas growth.",
+    "author_id": "mock_author_0",
+    "username": "mock_x_user_0",
+    "post_url": "https://x.com/mock_x_user_0/status/mock_x_post_0",
+    "public_metrics": {
+      "like_count": 10,
+      "reply_count": 1,
+      "retweet_count": 0,
+      "quote_count": 0
+    },
+    "matched_keywords": [
+      "怎么申请"
+    ],
+    "saved_at": "2026-05-10T14:35:14.345Z",
+    "research_status": "suggested"
+  },
+  {
+    "post_id": "mock_x_post___1",
+    "text": "费用多少 - looking for recommendations and practical next steps for overseas growth.",
+    "author_id": "mock_author_1",
+    "username": "mock_x_user_1",
+    "post_url": "https://x.com/mock_x_user_1/status/mock_x_post_1",
+    "public_metrics": {
+      "like_count": 11,
+      "reply_count": 2,
+      "retweet_count": 1,
+      "quote_count": 0
+    },
+    "matched_keywords": [
+      "费用多少"
+    ],
+    "saved_at": "2026-05-10T14:35:14.345Z",
+    "research_status": "suggested"
+  },
+  {
+    "post_id": "mock_x_post___2",
+    "text": "可以咨询吗 - looking for recommendations and practical next steps for overseas growth.",
+    "author_id": "mock_author_2",
+    "username": "mock_x_user_2",
+    "post_url": "https://x.com/mock_x_user_2/status/mock_x_post_2",
+    "public_metrics": {
+      "like_count": 12,
+      "reply_count": 3,
+      "retweet_count": 2,
+      "quote_count": 0
+    },
+    "matched_keywords": [
+      "可以咨询吗"
+    ],
+    "saved_at": "2026-05-10T14:35:14.345Z",
+    "research_status": "suggested"
+  },
+  {
+    "post_id": "mock_x_post___3",
+    "text": "转学分 - looking for recommendations and practical next steps for overseas growth.",
+    "author_id": "mock_author_3",
+    "username": "mock_x_user_3",
+    "post_url": "https://x.com/mock_x_user_3/status/mock_x_post_3",
+    "public_metrics": {
+      "like_count": 13,
+      "reply_count": 4,
+      "retweet_count": 3,
+      "quote_count": 0
+    },
+    "matched_keywords": [
+      "转学分"
+    ],
+    "saved_at": "2026-05-10T14:35:14.345Z",
+    "research_status": "suggested"
+  },
+  {
+    "post_id": "mock_x_post___4",
+    "text": "签证 - looking for recommendations and practical next steps for overseas growth.",
+    "author_id": "mock_author_4",
+    "username": "mock_x_user_4",
+    "post_url": "https://x.com/mock_x_user_4/status/mock_x_post_4",
+    "public_metrics": {
+      "like_count": 14,
+      "reply_count": 5,
+      "retweet_count": 4,
+      "quote_count": 0
+    },
+    "matched_keywords": [
+      "签证"
+    ],
+    "saved_at": "2026-05-10T14:35:14.345Z",
+    "research_status": "suggested"
+  }
+]

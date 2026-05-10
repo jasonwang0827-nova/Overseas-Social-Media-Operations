@@ -8,6 +8,15 @@ const state = {
   leadStageFilter: "all",
   leadPlatformFilter: "all",
   leadSourceFilter: "all",
+  xTab: "research",
+  xMode: "mock",
+  xResearchKeywordFilter: "",
+  xResearchStatusFilter: "all",
+  xResearchAuthorFilter: "",
+  xResearchDateFilter: "",
+  xKolSort: "kol_score",
+  xLeadSort: "lead_score",
+  xHistoryFilter: "all",
   data: null
 };
 
@@ -68,6 +77,7 @@ function render() {
     content: renderContent,
     publish: renderPublish,
     leads: renderLeads,
+    xhub: renderXHub,
     reports: renderReports
   };
   app.innerHTML = views[state.view]();
@@ -620,7 +630,7 @@ function renderPublish() {
               <td>${escapeHtml(record.platform)}</td>
               <td>${escapeHtml(record.account_id)}</td>
               <td>${escapeHtml(record.published_at || "")}</td>
-              <td>${record.mock_url ? `<a href="${escapeHtml(record.mock_url)}" target="_blank">${escapeHtml(record.mock_url)}</a>` : ""}</td>
+              <td>${record.post_url || record.mock_url ? `<a href="${escapeHtml(record.post_url || record.mock_url)}" target="_blank">${escapeHtml(record.post_url || record.mock_url)}</a>` : ""}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -761,6 +771,343 @@ function renderReports() {
   `;
 }
 
+function renderXHub() {
+  const x = state.data.x || {};
+  const research = x.research_posts || [];
+  const prospects = x.kol_prospects || [];
+  const candidates = x.lead_candidates || [];
+  const inbox = x.engagement_inbox || [];
+  const reports = x.reports || [];
+  const history = x.query_history || [];
+  const usage = x.api_usage || [];
+  const budget = x.budget || {};
+  const jsonErrors = x.json_errors || [];
+  const pendingDrafts = (state.data.drafts || []).filter((draft) => draft.platform === "x" && draft.approval_status !== "approved");
+  const xRecords = (state.data.records || []).filter((record) => record.platform === "x");
+  return `
+    <section class="panel">
+      <div class="row-card-head">
+        <div>
+          <h2>X Platform Module</h2>
+          <p class="muted">Phase 1：功能全，动作手动。搜索、KOL、线索、mentions、DM、报告都可以跑；回复、DM、评论、关注不会自动发送。</p>
+        </div>
+        <div class="tag-row">
+          ${status("manual_gated")}
+          ${status("dry_run_default")}
+          ${status(state.xMode)}
+        </div>
+      </div>
+      <div class="summary-grid small-summary">
+        <div class="metric"><span>Research Posts</span><strong>${research.length}</strong></div>
+        <div class="metric"><span>KOL Prospects</span><strong>${prospects.length}</strong></div>
+        <div class="metric"><span>Lead Candidates</span><strong>${candidates.length}</strong></div>
+        <div class="metric"><span>Inbox Items</span><strong>${inbox.length}</strong></div>
+      </div>
+      <div class="filter-row">
+        <label>
+          <span>模式</span>
+          <select id="xMode">
+            ${["mock", "api"].map((mode) => `<option value="${mode}" ${state.xMode === mode ? "selected" : ""}>${mode}</option>`).join("")}
+          </select>
+        </label>
+        <label class="wide-input">
+          <span>关键词</span>
+          <input id="xKeywords" placeholder="looking for, need help with, overseas social media" />
+        </label>
+        <label>
+          <span>竞品 Username</span>
+          <input id="xCompetitor" placeholder="competitor_demo" />
+        </label>
+      </div>
+      <div class="inline-actions">
+        <button class="action-button" data-action="xResearch">搜索帖子</button>
+        <button class="action-button secondary" data-action="xKol">发现 KOL</button>
+        <button class="action-button secondary" data-action="xCompetitor">竞品挖掘</button>
+        <button class="action-button secondary" data-action="xLead">发现线索</button>
+        <button class="action-button secondary" data-action="xEngagement">同步 Mentions</button>
+        <button class="action-button secondary" data-action="xDm">读取 DM</button>
+        <button class="action-button secondary" data-action="xReport">生成 X 报告</button>
+      </div>
+      ${state.data.x_action_log ? `<pre class="log-box">${escapeHtml(state.data.x_action_log)}</pre>` : ""}
+    </section>
+
+    ${renderXBudgetHistory(budget, history, usage, jsonErrors)}
+
+    <section class="panel" style="margin-top:24px">
+      <h2>安全状态</h2>
+      <table class="table">
+        <tbody>
+          ${row("当前阶段", "Phase 1: full features, manual actions")}
+          ${row("外发动作", "全部人工 gated，不自动 reply / DM / comment / follow")}
+          ${row("X 发布", "dry-run 默认；live 仍需 CLI --confirm LIVE")}
+          ${row("Pending X Reply Drafts", pendingDrafts.length)}
+          ${row("X Publish Records", xRecords.length)}
+        </tbody>
+      </table>
+    </section>
+
+    <div class="x-tabs">
+      ${["research", "kol", "leads", "inbox", "reports"].map((tab) => `<button class="action-button ${state.xTab === tab ? "" : "secondary"}" data-action="xTab" data-tab="${tab}">${tab}</button>`).join("")}
+    </div>
+
+    ${state.xTab === "research" ? renderXResearch(research) : ""}
+    ${state.xTab === "kol" ? renderXKols(prospects) : ""}
+    ${state.xTab === "leads" ? renderXLeadCandidates(candidates) : ""}
+    ${state.xTab === "inbox" ? renderXInbox(inbox) : ""}
+    ${state.xTab === "reports" ? renderXReports(reports) : ""}
+  `;
+}
+
+function renderXResearch(items) {
+  const filtered = items.filter((item) => {
+    const keyword = state.xResearchKeywordFilter.toLowerCase();
+    const author = state.xResearchAuthorFilter.toLowerCase();
+    const keywordMatch = !keyword || item.text.toLowerCase().includes(keyword) || (item.matched_keywords || []).some((value) => value.toLowerCase().includes(keyword));
+    const statusMatch = state.xResearchStatusFilter === "all" || item.research_status === state.xResearchStatusFilter;
+    const authorMatch = !author || item.username.toLowerCase().includes(author) || item.author_id.toLowerCase().includes(author);
+    const dateMatch = !state.xResearchDateFilter || (item.saved_at || "").slice(0, 10) === state.xResearchDateFilter;
+    return keywordMatch && statusMatch && authorMatch && dateMatch;
+  });
+  return `
+    <section class="panel">
+      <h2>X Research Posts</h2>
+      <div class="filter-row">
+        <label><span>Keyword</span><input id="xResearchKeywordFilter" value="${escapeHtml(state.xResearchKeywordFilter)}" placeholder="keyword or text" /></label>
+        <label><span>Status</span><select id="xResearchStatusFilter">${["all", "suggested", "draft", "approved", "rejected", "manually_completed"].map((item) => `<option value="${item}" ${state.xResearchStatusFilter === item ? "selected" : ""}>${item}</option>`).join("")}</select></label>
+        <label><span>Date</span><input id="xResearchDateFilter" type="date" value="${escapeHtml(state.xResearchDateFilter)}" /></label>
+        <label><span>Author</span><input id="xResearchAuthorFilter" value="${escapeHtml(state.xResearchAuthorFilter)}" placeholder="@username or ID" /></label>
+      </div>
+      <table class="table">
+        <thead><tr><th>Post</th><th>Author</th><th>Metrics</th><th>Keywords</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${filtered.map((item) => `
+            <tr>
+              <td><a href="${escapeHtml(item.post_url)}" target="_blank">${escapeHtml(item.post_id)}</a><br>${escapeHtml(item.text)}</td>
+              <td>@${escapeHtml(item.username)}<br><span class="muted">${escapeHtml(item.author_id)}</span></td>
+              <td>${metricText(item.public_metrics)}</td>
+              <td>${(item.matched_keywords || []).map(tag).join("")}</td>
+              <td>${status(item.research_status || "suggested")}</td>
+              <td>
+                <div class="table-actions">
+                  <button class="action-button secondary" data-action="xSaveContentIdea" data-post-id="${escapeHtml(item.post_id)}">保存为内容灵感</button>
+                  <button class="action-button secondary" data-action="xMarkResearchRelevant" data-post-id="${escapeHtml(item.post_id)}">相关</button>
+                  <button class="action-button danger" data-action="xMarkResearchIrrelevant" data-post-id="${escapeHtml(item.post_id)}">无关</button>
+                </div>
+              </td>
+            </tr>
+          `).join("") || `<tr><td colspan="6" class="muted">还没有匹配的 research posts。</td></tr>`}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function renderXBudgetHistory(budget, history, usage, jsonErrors) {
+  const filteredHistory = history.filter((item) => {
+    if (state.xHistoryFilter === "blocked") return String(item.result_file || "").startsWith("blocked:");
+    if (state.xHistoryFilter === "estimate") return String(item.result_file || "").includes("estimate-only");
+    if (state.xHistoryFilter === "api") return item.mode === "api";
+    return true;
+  }).slice().reverse().slice(0, 12);
+  const recentUsage = usage.slice().reverse().slice(0, 8);
+  const budgetRemaining = budget.budget_remaining === null ? "unlimited" : budget.budget_remaining;
+  return `
+    <section class="panel" style="margin-top:24px">
+      <div class="row-card-head">
+        <div>
+          <h2>Budget & Query History</h2>
+          <p class="muted">只展示本地 JSON 记录；这里不会触发 API 调用。</p>
+        </div>
+        <label>
+          <span>History filter</span>
+          <select id="xHistoryFilter">
+            ${[["all", "All"], ["api", "API mode"], ["estimate", "Estimate-only"], ["blocked", "Blocked"]].map(([value, label]) => `<option value="${value}" ${state.xHistoryFilter === value ? "selected" : ""}>${label}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      ${jsonErrors.length ? `<div class="error-list">${jsonErrors.map((item) => `<div class="error">JSON 读取错误：${escapeHtml(item.file)} - ${escapeHtml(item.message)}</div>`).join("")}</div>` : ""}
+      <div class="summary-grid small-summary">
+        <div class="metric"><span>Monthly Budget</span><strong>${escapeHtml(budget.monthly_api_budget ?? 0)}</strong></div>
+        <div class="metric"><span>Used</span><strong>${escapeHtml(budget.budget_used ?? 0)}</strong></div>
+        <div class="metric"><span>Remaining</span><strong>${escapeHtml(budgetRemaining)}</strong></div>
+        <div class="metric"><span>Max / Command</span><strong>${escapeHtml(budget.max_cost_per_command ?? 0)}</strong></div>
+      </div>
+      <table class="table compact-table">
+        <thead><tr><th>Time</th><th>Command</th><th>Mode</th><th>Cost</th><th>Result</th></tr></thead>
+        <tbody>
+          ${filteredHistory.map((item) => `
+            <tr>
+              <td>${escapeHtml(formatDateTime(item.created_at))}</td>
+              <td>${escapeHtml(item.command || "")}<br><span class="muted">${escapeHtml((item.keywords || []).join(", "))}</span></td>
+              <td>${status(item.mode || "mock")}</td>
+              <td>${escapeHtml(item.estimated_cost ?? 0)}<br><span class="muted">api ${escapeHtml(item.api_calls ?? 0)} · cache ${escapeHtml(item.cache_hits ?? 0)}</span></td>
+              <td>${String(item.result_file || "").startsWith("blocked:") ? status("blocked") : String(item.result_file || "").includes("estimate-only") ? status("estimate-only") : status("recorded")}<br><span class="muted">${escapeHtml(item.result_file || "")}</span></td>
+            </tr>
+          `).join("") || `<tr><td colspan="5" class="muted">还没有查询历史。运行 X mock 或 estimate-only 后会出现在这里。</td></tr>`}
+        </tbody>
+      </table>
+      <details class="detail-box">
+        <summary>Recent API Usage Ledger</summary>
+        <table class="table compact-table">
+          <thead><tr><th>Time</th><th>Path</th><th>Cost</th><th>Cache</th></tr></thead>
+          <tbody>
+            ${recentUsage.map((item) => `<tr><td>${escapeHtml(formatDateTime(item.timestamp))}</td><td>${escapeHtml(item.path || "")}</td><td>${escapeHtml(item.cost_units ?? 0)}</td><td>${escapeHtml(String(item.cache_hit ?? false))}</td></tr>`).join("") || `<tr><td colspan="4" class="muted">还没有真实 API usage。</td></tr>`}
+          </tbody>
+        </table>
+      </details>
+    </section>
+  `;
+}
+
+function renderXKols(items) {
+  const sorted = items.slice().sort((a, b) => xKolSortValue(b, state.xKolSort) - xKolSortValue(a, state.xKolSort));
+  return `
+    <section class="panel">
+      <h2>KOL Prospects</h2>
+      <div class="filter-row">
+        <label><span>Sort</span><select id="xKolSort">${[
+          ["kol_score", "KOL score"],
+          ["priority", "Priority"],
+          ["follower_count", "Follower count"],
+          ["engagement_score", "Engagement score"],
+          ["content_match", "Content match"],
+          ["audience_fit", "Audience fit"],
+          ["collaboration", "Collaboration"]
+        ].map(([value, label]) => `<option value="${value}" ${state.xKolSort === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      </div>
+      <table class="table">
+        <thead><tr><th>KOL</th><th>Source</th><th>Score</th><th>Keywords</th><th>Status / Notes</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${sorted.map((item) => `
+            <tr>
+              <td><a href="${escapeHtml(item.profile_url)}" target="_blank">@${escapeHtml(item.username)}</a><br><strong>${escapeHtml(item.display_name || item.username)}</strong><br><span class="muted">${escapeHtml(item.bio || "")}</span></td>
+              <td>${escapeHtml(item.source)}</td>
+              <td><strong>${escapeHtml(item.kol_score)}</strong> ${status(item.kol_priority || "watchlist")}<br>${metricText(item.public_metrics)}<br><span class="muted">match ${xKolSortValue(item, "content_match")} · eng ${xKolSortValue(item, "engagement_score")} · follower ${escapeHtml(item.follower_score || 0)} · audience ${escapeHtml(item.audience_fit_score || 0)} · collab ${escapeHtml(item.collaboration_score || 0)}</span></td>
+              <td>${(item.matched_keywords || []).map(tag).join("")}</td>
+              <td>
+                ${status(item.collaboration_status || "new")} ${status(item.prospect_status || "suggested")}
+                <textarea class="x-kol-notes" data-prospect-id="${escapeHtml(item.prospect_id)}">${escapeHtml(item.notes || "")}</textarea>
+              </td>
+              <td>
+                <div class="table-actions">
+                  ${["priority", "contacted", "rejected", "watchlist"].map((value) => `<button class="action-button secondary" data-action="xKolStatus" data-prospect-id="${escapeHtml(item.prospect_id)}" data-status="${value}">${value}</button>`).join("")}
+                  <button class="action-button" data-action="xKolSaveNotes" data-prospect-id="${escapeHtml(item.prospect_id)}">保存备注</button>
+                </div>
+              </td>
+            </tr>
+          `).join("") || `<tr><td colspan="6" class="muted">还没有 KOL prospects。</td></tr>`}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function renderXLeadCandidates(items) {
+  const sorted = items.slice().sort((a, b) => xLeadSortValue(b, state.xLeadSort) - xLeadSortValue(a, state.xLeadSort));
+  return `
+    <section class="panel">
+      <h2>X Lead Candidates</h2>
+      <div class="filter-row">
+        <label><span>Sort</span><select id="xLeadSort">${[
+          ["lead_score", "Lead score"],
+          ["date", "Newest"]
+        ].map(([value, label]) => `<option value="${value}" ${state.xLeadSort === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>
+      </div>
+      <table class="table">
+        <thead><tr><th>Candidate</th><th>Scores</th><th>Keywords</th><th>Reply Draft</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${sorted.map((item) => `
+            <tr>
+              <td><a href="${escapeHtml(item.source_url)}" target="_blank">@${escapeHtml(item.username)}</a><br>${escapeHtml(item.message_text)}</td>
+              <td><strong>${escapeHtml(item.intent_score)}</strong> ${status(item.lead_priority || "unknown")}<br><span class="muted">buyer ${escapeHtml(item.buyer_intent_score ?? "-")} · industry ${escapeHtml(item.industry_match_score ?? "-")} · urgency ${escapeHtml(item.urgency_score ?? "-")} · negative ${escapeHtml(item.negative_score ?? "-")} · reply ${escapeHtml(item.reply_value_score ?? "-")}</span></td>
+              <td>${(item.matched_keywords || []).map(tag).join("")}</td>
+              <td>${escapeHtml(item.recommended_reply || "")}</td>
+              <td>${status(item.candidate_status || "suggested")}</td>
+              <td>
+                <div class="table-actions">
+                  <button class="action-button secondary" data-action="xConvertLead" data-candidate-id="${escapeHtml(item.candidate_id)}">转为正式线索</button>
+                  <button class="action-button" data-action="xCandidateReply" data-candidate-id="${escapeHtml(item.candidate_id)}">生成回复草稿</button>
+                  <button class="action-button secondary" data-action="xCandidateHandled" data-candidate-id="${escapeHtml(item.candidate_id)}">handled</button>
+                  <button class="action-button danger" data-action="xCandidateIrrelevant" data-candidate-id="${escapeHtml(item.candidate_id)}">无关</button>
+                </div>
+              </td>
+            </tr>
+          `).join("") || `<tr><td colspan="6" class="muted">还没有 lead candidates。</td></tr>`}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function renderXInbox(items) {
+  return `
+    <section class="panel">
+      <h2>X Engagement Inbox</h2>
+      <table class="table">
+        <thead><tr><th>Interaction</th><th>Type</th><th>Class</th><th>Score</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${items.map((item) => `
+            <tr>
+              <td>${item.source_url ? `<a href="${escapeHtml(item.source_url)}" target="_blank">@${escapeHtml(item.username)}</a>` : `@${escapeHtml(item.username)}`}<br>${escapeHtml(item.text)}</td>
+              <td>${escapeHtml(item.source_type)}</td>
+              <td>
+                <select class="x-inbox-classification" data-engagement-id="${escapeHtml(item.engagement_id)}">
+                  ${["lead", "complaint", "question", "partnership", "spam", "general_engagement"].map((value) => `<option value="${value}" ${item.classification === value ? "selected" : ""}>${value}</option>`).join("")}
+                </select>
+              </td>
+              <td>${escapeHtml(item.lead_score)}</td>
+              <td>${status(item.action_status || "suggested")}</td>
+              <td>
+                <div class="table-actions">
+                  <button class="action-button secondary" data-action="xInboxClassify" data-engagement-id="${escapeHtml(item.engagement_id)}">保存分类</button>
+                  <button class="action-button secondary" data-action="xInboxConvertLead" data-engagement-id="${escapeHtml(item.engagement_id)}">转线索</button>
+                  <button class="action-button" data-action="xInboxReply" data-engagement-id="${escapeHtml(item.engagement_id)}">生成回复草稿</button>
+                  <button class="action-button secondary" data-action="xInboxHandled" data-engagement-id="${escapeHtml(item.engagement_id)}">handled</button>
+                </div>
+              </td>
+            </tr>
+          `).join("") || `<tr><td colspan="6" class="muted">还没有 inbox items。</td></tr>`}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function renderXReports(items) {
+  const x = state.data.x || {};
+  const budget = x.budget || {};
+  const history = x.query_history || [];
+  const latestCosts = history.slice(-10).reduce((total, item) => total + Number(item.estimated_cost || 0), 0);
+  return `
+    <section class="panel">
+      <h2>X Reports</h2>
+      ${items.map((report) => `
+        <article class="row-card" style="margin-bottom:14px">
+          <h3>${escapeHtml(report.date || "report")}</h3>
+          <p class="muted">${escapeHtml(report.phase || "")}</p>
+          <div class="summary-grid small-summary">
+            <div class="metric"><span>Published</span><strong>${(report.published_posts || []).length}</strong></div>
+            <div class="metric"><span>Research</span><strong>${(report.top_posts || []).length}</strong></div>
+            <div class="metric"><span>KOL</span><strong>${(report.new_kol_prospects || []).length}</strong></div>
+            <div class="metric"><span>Leads</span><strong>${(report.new_lead_candidates || []).length}</strong></div>
+            <div class="metric"><span>Drafts</span><strong>${(report.pending_reply_drafts || []).length}</strong></div>
+          </div>
+          <h4>API Usage Summary</h4>
+          <table class="table compact-table"><tbody>
+            ${row("Budget used", budget.budget_used ?? 0)}
+            ${row("Budget remaining", budget.budget_remaining === null ? "unlimited" : budget.budget_remaining)}
+            ${row("Recent estimated cost", latestCosts)}
+          </tbody></table>
+          <h4>Recommended Actions</h4>
+          <ul>${(report.recommended_next_actions || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          <h4>Pending Actions</h4>
+          <p class="muted">Pending drafts: ${(report.pending_reply_drafts || []).length}; New KOLs: ${(report.new_kol_prospects || []).length}; New leads: ${(report.new_lead_candidates || []).length}</p>
+        </article>
+      `).join("") || `<p class="muted">还没有 X report。</p>`}
+    </section>
+  `;
+}
+
 function renderMetrics(summary) {
   const metrics = [
     ["活跃账号", summary.active_accounts],
@@ -890,6 +1237,145 @@ function bindViewEvents() {
       render();
     });
   }
+
+  const xMode = document.querySelector("#xMode");
+  if (xMode) {
+    xMode.addEventListener("change", (event) => {
+      state.xMode = event.target.value;
+      render();
+    });
+  }
+
+  document.querySelectorAll("[data-action='xTab']").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.xTab = button.dataset.tab;
+      render();
+    });
+  });
+
+  bindValueToState("#xResearchKeywordFilter", "xResearchKeywordFilter");
+  bindValueToState("#xResearchStatusFilter", "xResearchStatusFilter");
+  bindValueToState("#xResearchAuthorFilter", "xResearchAuthorFilter");
+  bindValueToState("#xResearchDateFilter", "xResearchDateFilter");
+  bindValueToState("#xKolSort", "xKolSort");
+  bindValueToState("#xLeadSort", "xLeadSort");
+  bindValueToState("#xHistoryFilter", "xHistoryFilter");
+
+  const xActions = {
+    xResearch: "research",
+    xKol: "kol",
+    xCompetitor: "competitor",
+    xLead: "lead",
+    xEngagement: "engagement",
+    xDm: "dm",
+    xReport: "report"
+  };
+  Object.entries(xActions).forEach(([action, xAction]) => {
+    document.querySelectorAll(`[data-action='${action}']`).forEach((button) => {
+      button.addEventListener("click", () => postJson("/api/x/action", {
+        client_id: state.clientId,
+        action: xAction,
+        mode: document.querySelector("#xMode")?.value || state.xMode,
+        keywords: document.querySelector("#xKeywords")?.value || "",
+        username: document.querySelector("#xCompetitor")?.value || "competitor_demo"
+      }));
+    });
+  });
+
+  document.querySelectorAll("[data-action='xSaveContentIdea']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/research/save-content", {
+      client_id: state.clientId,
+      post_id: button.dataset.postId
+    }));
+  });
+  document.querySelectorAll("[data-action='xMarkResearchRelevant']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/research/update", {
+      client_id: state.clientId,
+      post_id: button.dataset.postId,
+      research_status: "approved"
+    }));
+  });
+  document.querySelectorAll("[data-action='xMarkResearchIrrelevant']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/research/update", {
+      client_id: state.clientId,
+      post_id: button.dataset.postId,
+      research_status: "rejected"
+    }));
+  });
+  document.querySelectorAll("[data-action='xKolStatus']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/kol/update", {
+      client_id: state.clientId,
+      prospect_id: button.dataset.prospectId,
+      collaboration_status: button.dataset.status,
+      prospect_status: button.dataset.status === "rejected" ? "rejected" : "suggested"
+    }));
+  });
+  document.querySelectorAll("[data-action='xKolSaveNotes']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const input = document.querySelector(`.x-kol-notes[data-prospect-id="${cssEscape(button.dataset.prospectId)}"]`);
+      postJson("/api/x/kol/update", {
+        client_id: state.clientId,
+        prospect_id: button.dataset.prospectId,
+        notes: input?.value || ""
+      });
+    });
+  });
+  document.querySelectorAll("[data-action='xConvertLead']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/lead/convert", {
+      client_id: state.clientId,
+      candidate_id: button.dataset.candidateId,
+      generate_reply: false
+    }));
+  });
+  document.querySelectorAll("[data-action='xCandidateReply']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/lead/reply-draft", {
+      client_id: state.clientId,
+      candidate_id: button.dataset.candidateId
+    }));
+  });
+  document.querySelectorAll("[data-action='xCandidateHandled']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/lead/update", {
+      client_id: state.clientId,
+      candidate_id: button.dataset.candidateId,
+      candidate_status: "manually_completed"
+    }));
+  });
+  document.querySelectorAll("[data-action='xCandidateIrrelevant']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/lead/update", {
+      client_id: state.clientId,
+      candidate_id: button.dataset.candidateId,
+      candidate_status: "rejected"
+    }));
+  });
+  document.querySelectorAll("[data-action='xInboxClassify']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const input = document.querySelector(`.x-inbox-classification[data-engagement-id="${cssEscape(button.dataset.engagementId)}"]`);
+      postJson("/api/x/engagement/update", {
+        client_id: state.clientId,
+        engagement_id: button.dataset.engagementId,
+        classification: input?.value || "general_engagement"
+      });
+    });
+  });
+  document.querySelectorAll("[data-action='xInboxReply']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/engagement/reply-draft", {
+      client_id: state.clientId,
+      engagement_id: button.dataset.engagementId
+    }));
+  });
+  document.querySelectorAll("[data-action='xInboxConvertLead']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/engagement/convert-lead", {
+      client_id: state.clientId,
+      engagement_id: button.dataset.engagementId
+    }));
+  });
+  document.querySelectorAll("[data-action='xInboxHandled']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/engagement/update", {
+      client_id: state.clientId,
+      engagement_id: button.dataset.engagementId,
+      action_status: "manually_completed"
+    }));
+  });
 
   const contentGenerateForm = document.querySelector("#contentGenerateForm");
   if (contentGenerateForm) {
@@ -1172,6 +1658,34 @@ function resetAccountForm() {
   form.capability_override.value = "";
 }
 
+function bindValueToState(selector, key) {
+  const element = document.querySelector(selector);
+  if (!element) return;
+  element.addEventListener("change", (event) => {
+    state[key] = event.target.value;
+    render();
+  });
+}
+
+function xKolSortValue(item, sortKey) {
+  if (sortKey === "priority") return { high_priority: 4, medium_priority: 3, watchlist: 2, ignored: 1 }[item.kol_priority] || 0;
+  if (sortKey === "follower_count") return Number(item.public_metrics?.followers_count || 0);
+  if (sortKey === "engagement_score") return Number(item.engagement_score ?? metricTotal(item.public_metrics || {}));
+  if (sortKey === "content_match") return Number(item.content_match_score ?? (item.matched_keywords || []).length * 10);
+  if (sortKey === "audience_fit") return Number(item.audience_fit_score || 0);
+  if (sortKey === "collaboration") return Number(item.collaboration_score || 0);
+  return Number(item.kol_score || 0);
+}
+
+function xLeadSortValue(item, sortKey) {
+  if (sortKey === "date") return Date.parse(item.saved_at || item.updated_at || "") || 0;
+  return Number(item.intent_score || 0);
+}
+
+function metricTotal(metrics = {}) {
+  return Number(metrics.like_count || 0) + Number(metrics.reply_count || 0) * 3 + Number(metrics.retweet_count || 0) * 4 + Number(metrics.quote_count || 0) * 5 + Number(metrics.impression_count || 0) / 100;
+}
+
 function renderAccountCapabilityStatus(account) {
   const capability = mergeAccountCapabilities(account);
   const directPublishTier = capabilityTier([
@@ -1241,6 +1755,23 @@ function tag(value) {
 
 function status(value) {
   return `<span class="status ${escapeHtml(String(value))}">${escapeHtml(String(value))}</span>`;
+}
+
+function metricText(metrics = {}) {
+  return [
+    ["like", metrics.like_count],
+    ["reply", metrics.reply_count],
+    ["rt", metrics.retweet_count],
+    ["quote", metrics.quote_count],
+    ["impr", metrics.impression_count]
+  ].filter(([, value]) => value !== undefined).map(([label, value]) => `${label}:${value}`).join(" · ") || "-";
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString();
 }
 
 function escapeHtml(value) {

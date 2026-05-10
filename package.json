@@ -43,6 +43,16 @@
     "report:daily": "tsx apps/worker/cli.ts report:daily",
     "report:weekly": "tsx apps/worker/cli.ts report:weekly",
     "demo:seed": "tsx apps/worker/cli.ts demo:seed",
+    "demo:e2e": "tsx apps/worker/cli.ts demo:e2e",
+    "x:publish:dry-run": "tsx apps/worker/cli.ts x:publish:test --mode dry-run",
+    "x:publish:live": "tsx apps/worker/cli.ts x:publish:test --mode live",
+    "x:research:search": "tsx apps/worker/cli.ts x:research:search",
+    "x:kol:discover": "tsx apps/worker/cli.ts x:kol:discover",
+    "x:competitor:mine": "tsx apps/worker/cli.ts x:competitor:mine",
+    "x:lead:discover": "tsx apps/worker/cli.ts x:lead:discover",
+    "x:engagement:sync": "tsx apps/worker/cli.ts x:engagement:sync",
+    "x:dm:sync": "tsx apps/worker/cli.ts x:dm:sync",
+    "x:report": "tsx apps/worker/cli.ts x:report",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

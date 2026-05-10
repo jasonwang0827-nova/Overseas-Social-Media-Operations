@@ -1,0 +1,58 @@
+[
+  {
+    "reply_draft_id": "reply_20260510191712_g61q",
+    "lead_id": "lead_20260510191712_zyxo",
+    "client_id": "client_demo_001",
+    "platform": "instagram",
+    "account_id": "ig_demo_001",
+    "draft_text": "谢谢你留言。可以的，你可以先补充一下具体需求，Maple Growth Demo 会帮你判断下一步是否适合预约咨询。",
+    "tone": "professional, helpful",
+    "approval_status": "draft",
+    "rejection_reason": null,
+    "sent_status": "not_sent",
+    "created_at": "2026-05-10T19:17:12.012Z",
+    "updated_at": "2026-05-10T19:17:12.012Z"
+  },
+  {
+    "reply_draft_id": "reply_20260510191712_uz0j",
+    "lead_id": "lead_20260510191712_4x0r",
+    "client_id": "client_demo_001",
+    "platform": "tiktok",
+    "account_id": "tiktok_demo_001",
+    "draft_text": "谢谢你留言。可以的，你可以先补充一下具体需求，Maple Growth Demo 会帮你判断下一步是否适合预约咨询。",
+    "tone": "professional, helpful",
+    "approval_status": "draft",
+    "rejection_reason": null,
+    "sent_status": "not_sent",
+    "created_at": "2026-05-10T19:17:12.012Z",
+    "updated_at": "2026-05-10T19:17:12.012Z"
+  },
+  {
+    "reply_draft_id": "reply_20260510191712_n7jf",
+    "lead_id": "lead_20260510191712_3sz0",
+    "client_id": "client_demo_001",
+    "platform": "x",
+    "account_id": "x_demo_001",
+    "draft_text": "谢谢你留言。可以的，你可以先补充一下具体需求，Maple Growth Demo 会帮你判断下一步是否适合预约咨询。",
+    "tone": "professional, helpful",
+    "approval_status": "draft",
+    "rejection_reason": null,
+    "sent_status": "not_sent",
+    "created_at": "2026-05-10T19:17:12.013Z",
+    "updated_at": "2026-05-10T19:17:12.013Z"
+  },
+  {
+    "reply_draft_id": "reply_20260510191843_9ftx",
+    "lead_id": "lead_20260510191843_giwc",
+    "client_id": "client_demo_001",
+    "platform": "x",
+    "account_id": "x_demo_001",
+    "draft_text": "谢谢你的留言。你可以私信我们补充一下具体情况，Maple Growth Demo 会先帮你做初步判断。",
+    "tone": "professional, practical, trustworthy",
+    "approval_status": "draft",
+    "rejection_reason": null,
+    "sent_status": "not_sent",
+    "created_at": "2026-05-10T19:18:43.883Z",
+    "updated_at": "2026-05-10T19:18:43.883Z"
+  }
+]

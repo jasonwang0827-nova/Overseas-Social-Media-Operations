@@ -1,0 +1,138 @@
+[
+  {
+    "query_id": "xquery_20260510191810_41c0",
+    "client_id": "client_demo_001",
+    "command": "x:research:search",
+    "mode": "mock",
+    "keywords": [
+      "overseas social media",
+      "lead generation",
+      "content operations",
+      "brand awareness"
+    ],
+    "requested_limit": 50,
+    "returned_count": 4,
+    "saved_count": 4,
+    "result_ids": [
+      "mock_x_post_overseas_social_media_0",
+      "mock_x_post_lead_generation_1",
+      "mock_x_post_content_operations_2",
+      "mock_x_post_brand_awareness_3"
+    ],
+    "result_file": "x-research-posts.json",
+    "estimated_cost": 0,
+    "api_calls": 0,
+    "cache_hits": 0,
+    "created_at": "2026-05-10T19:18:10.782Z"
+  },
+  {
+    "query_id": "xquery_20260510191822_gfoz",
+    "client_id": "client_demo_001",
+    "command": "x:kol:discover",
+    "mode": "mock",
+    "keywords": [
+      "overseas social media",
+      "lead generation",
+      "content operations",
+      "brand awareness"
+    ],
+    "requested_limit": 50,
+    "returned_count": 4,
+    "saved_count": 4,
+    "result_ids": [
+      "kol_mock_user_mock_x_user_3",
+      "kol_mock_user_mock_x_user_2",
+      "kol_mock_user_mock_x_user_1",
+      "kol_mock_user_mock_x_user_0"
+    ],
+    "result_file": "kol-prospects.json",
+    "estimated_cost": 0,
+    "api_calls": 0,
+    "cache_hits": 0,
+    "created_at": "2026-05-10T19:18:22.383Z"
+  },
+  {
+    "query_id": "xquery_20260510191834_bjci",
+    "client_id": "client_demo_001",
+    "command": "x:kol:discover",
+    "mode": "api",
+    "keywords": [
+      "overseas social media",
+      "lead generation",
+      "content operations",
+      "brand awareness"
+    ],
+    "requested_limit": 50,
+    "returned_count": 0,
+    "saved_count": 0,
+    "estimated_cost": 51,
+    "result_file": "kol-prospects.json (estimate-only)",
+    "api_calls": 0,
+    "cache_hits": 0,
+    "created_at": "2026-05-10T19:18:34.172Z"
+  },
+  {
+    "query_id": "xquery_20260510191843_xvp5",
+    "client_id": "client_demo_001",
+    "command": "x:lead:discover",
+    "mode": "mock",
+    "keywords": [
+      "looking for",
+      "need help with",
+      "any recommendation",
+      "visa refused",
+      "study permit help",
+      "Toronto realtor recommendation",
+      "quote",
+      "pricing",
+      "book a call"
+    ],
+    "requested_limit": 50,
+    "returned_count": 5,
+    "saved_count": 1,
+    "result_ids": [
+      "xlead_mock_x_post_need_help_with_1"
+    ],
+    "result_file": "lead-candidates.json,leads.json,reply-drafts.json",
+    "estimated_cost": 0,
+    "api_calls": 0,
+    "cache_hits": 0,
+    "created_at": "2026-05-10T19:18:43.885Z"
+  },
+  {
+    "query_id": "xquery_20260510191903_3ofi",
+    "client_id": "client_demo_001",
+    "command": "x:kol:discover",
+    "mode": "api",
+    "keywords": [],
+    "returned_count": 0,
+    "saved_count": 0,
+    "estimated_cost": 51,
+    "result_file": "blocked: estimated cost 51 exceeds remaining budget 1; budget_block_at would be reached: 51/1",
+    "api_calls": 0,
+    "cache_hits": 0,
+    "created_at": "2026-05-10T19:19:03.146Z"
+  },
+  {
+    "query_id": "xquery_20260510193320_tr4g",
+    "client_id": "client_demo_001",
+    "command": "x:engagement:sync",
+    "mode": "mock",
+    "keywords": [
+      "@maple_growth_x"
+    ],
+    "username": "maple_growth_x",
+    "requested_limit": 50,
+    "returned_count": 2,
+    "saved_count": 2,
+    "result_ids": [
+      "mention_mock_x_post__maple_growth_x_0",
+      "mention_mock_x_post_need_help_1"
+    ],
+    "result_file": "x-engagement-inbox.json",
+    "estimated_cost": 0,
+    "api_calls": 0,
+    "cache_hits": 0,
+    "created_at": "2026-05-10T19:33:20.215Z"
+  }
+]

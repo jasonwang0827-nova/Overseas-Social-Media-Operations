@@ -1,0 +1,78 @@
+[
+  {
+    "post_id": "mock_x_post_overseas_social_media_0",
+    "text": "overseas social media - looking for recommendations and practical next steps for overseas growth.",
+    "author_id": "mock_author_0",
+    "username": "mock_x_user_0",
+    "post_url": "https://x.com/mock_x_user_0/status/mock_x_post_0",
+    "public_metrics": {
+      "like_count": 10,
+      "reply_count": 1,
+      "retweet_count": 0,
+      "quote_count": 0
+    },
+    "matched_keywords": [
+      "overseas social media"
+    ],
+    "created_at": "2026-05-10T19:18:22.381Z",
+    "saved_at": "2026-05-10T19:32:59.997Z",
+    "research_status": "approved"
+  },
+  {
+    "post_id": "mock_x_post_lead_generation_1",
+    "text": "lead generation - looking for recommendations and practical next steps for overseas growth.",
+    "author_id": "mock_author_1",
+    "username": "mock_x_user_1",
+    "post_url": "https://x.com/mock_x_user_1/status/mock_x_post_1",
+    "public_metrics": {
+      "like_count": 11,
+      "reply_count": 2,
+      "retweet_count": 1,
+      "quote_count": 0
+    },
+    "matched_keywords": [
+      "lead generation"
+    ],
+    "created_at": "2026-05-10T19:18:22.381Z",
+    "saved_at": "2026-05-10T19:18:22.381Z",
+    "research_status": "suggested"
+  },
+  {
+    "post_id": "mock_x_post_content_operations_2",
+    "text": "content operations - looking for recommendations and practical next steps for overseas growth.",
+    "author_id": "mock_author_2",
+    "username": "mock_x_user_2",
+    "post_url": "https://x.com/mock_x_user_2/status/mock_x_post_2",
+    "public_metrics": {
+      "like_count": 12,
+      "reply_count": 3,
+      "retweet_count": 2,
+      "quote_count": 0
+    },
+    "matched_keywords": [
+      "content operations"
+    ],
+    "created_at": "2026-05-10T19:18:22.381Z",
+    "saved_at": "2026-05-10T19:18:22.381Z",
+    "research_status": "suggested"
+  },
+  {
+    "post_id": "mock_x_post_brand_awareness_3",
+    "text": "brand awareness - looking for recommendations and practical next steps for overseas growth.",
+    "author_id": "mock_author_3",
+    "username": "mock_x_user_3",
+    "post_url": "https://x.com/mock_x_user_3/status/mock_x_post_3",
+    "public_metrics": {
+      "like_count": 13,
+      "reply_count": 4,
+      "retweet_count": 3,
+      "quote_count": 0
+    },
+    "matched_keywords": [
+      "brand awareness"
+    ],
+    "created_at": "2026-05-10T19:18:22.381Z",
+    "saved_at": "2026-05-10T19:18:22.381Z",
+    "research_status": "suggested"
+  }
+]

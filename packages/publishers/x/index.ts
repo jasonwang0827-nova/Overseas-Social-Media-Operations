@@ -1,3 +1,3 @@
-import { createMockPublisher } from "../mockPublisher.js";
+import { xRealPublisher } from "./realPublisher.js";
 
-export const xPublisher = createMockPublisher("x");
+export const xPublisher = xRealPublisher;

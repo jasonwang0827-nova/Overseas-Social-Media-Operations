@@ -1,0 +1,35 @@
+{
+  "client_id": "client_demo_001",
+  "client_name": "Maple Growth Demo",
+  "industry": "brand_global",
+  "business_type": "overseas_social_media_operations",
+  "region": "Canada",
+  "language": [
+    "zh",
+    "en"
+  ],
+  "target_audience": [
+    "Chinese founders",
+    "cross-border brands",
+    "local service businesses"
+  ],
+  "service_keywords": [
+    "overseas social media",
+    "lead generation",
+    "content operations",
+    "brand awareness"
+  ],
+  "brand_tone": "professional, practical, trustworthy",
+  "lead_goal": [
+    "book consultation",
+    "DM inquiry",
+    "website visit"
+  ],
+  "monthly_api_budget": 1000,
+  "budget_warn_at": 700,
+  "budget_block_at": 950,
+  "max_cost_per_command": 100,
+  "default_x_search_limit": 50,
+  "default_kol_discovery_limit": 50,
+  "status": "active"
+}

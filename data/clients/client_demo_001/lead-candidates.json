@@ -1,0 +1,28 @@
+[
+  {
+    "candidate_id": "xlead_mock_x_post_need_help_with_1",
+    "client_id": "client_demo_001",
+    "platform": "x",
+    "source_post_id": "mock_x_post_need_help_with_1",
+    "source_url": "https://x.com/mock_x_user_1/status/mock_x_post_1",
+    "user_id": "mock_author_1",
+    "username": "mock_x_user_1",
+    "display_name": "mock_x_user_1",
+    "message_text": "need help with - looking for recommendations and practical next steps for overseas growth.",
+    "matched_keywords": [
+      "looking for",
+      "need help with"
+    ],
+    "intent_score": 64,
+    "buyer_intent_score": 98,
+    "industry_match_score": 36,
+    "urgency_score": 0,
+    "negative_score": 0,
+    "reply_value_score": 55,
+    "lead_priority": "medium",
+    "candidate_status": "manually_completed",
+    "recommended_reply": "Thanks for sharing. This may be relevant, and we can help you think through practical next steps if you want more context.",
+    "saved_at": "2026-05-10T19:18:43.883Z",
+    "updated_at": "2026-05-10T19:33:31.744Z"
+  }
+]

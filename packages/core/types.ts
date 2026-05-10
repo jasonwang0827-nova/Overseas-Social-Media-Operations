@@ -1,8 +1,9 @@
 export type Platform = "facebook" | "instagram" | "tiktok" | "x" | "linkedin" | "youtube";
 export type Status = "draft" | "ready_for_review" | "approved" | "scheduled" | "publishing" | "published" | "failed" | "blocked" | "needs_manual_review" | "cancelled";
 export type ApprovalStatus = "draft" | "ready_for_review" | "approved" | "rejected";
+export type AutomationActionStatus = "draft" | "suggested" | "approved" | "rejected" | "manually_completed" | "automated_allowed";
 export type LeadStage = "new" | "qualified" | "replied" | "waiting_response" | "booked" | "converted" | "not_interested" | "spam";
-export type LeadSourceType = "comment" | "dm" | "form" | "manual" | "email" | "whatsapp";
+export type LeadSourceType = "comment" | "dm" | "form" | "manual" | "email" | "whatsapp" | "csv";
 export type CapabilityValue = boolean | "limited";
 export type AccountStatus = "active" | "inactive" | "archived";
 export type AuthStatus = "connected" | "mock" | "disconnected" | "expired" | "error";
@@ -58,6 +59,12 @@ export interface Client {
   service_keywords: string[];
   brand_tone: string;
   lead_goal: string[];
+  monthly_api_budget?: number;
+  budget_warn_at?: number;
+  budget_block_at?: number;
+  max_cost_per_command?: number;
+  default_x_search_limit?: number;
+  default_kol_discovery_limit?: number;
   status: "active" | "paused" | "archived";
 }
 
@@ -87,9 +94,19 @@ export interface PlatformAccount {
   auth_status: AuthStatus;
   status: AccountStatus;
   capability_override?: Partial<PlatformCapabilities>;
+  automation_settings?: PlatformAutomationSettings;
   notes: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface PlatformAutomationSettings {
+  auto_publish_enabled: boolean;
+  auto_reply_enabled: boolean;
+  auto_dm_enabled: boolean;
+  auto_follow_enabled: boolean;
+  auto_kol_discovery_enabled: boolean;
+  auto_lead_discovery_enabled: boolean;
 }
 
 export interface PlatformCapabilities {
@@ -197,6 +214,7 @@ export interface PublishRecord {
   status: "published";
   publish_mode: "mock" | "api" | "manual";
   mock_url: string;
+  post_url?: string | null;
 }
 
 export interface Lead {
@@ -237,5 +255,116 @@ export interface ReplyDraft {
   rejection_reason: string | null;
   sent_status: "not_sent" | "sent" | "failed";
   created_at: string;
+  updated_at: string;
+}
+
+export interface XPublicMetrics {
+  retweet_count?: number;
+  reply_count?: number;
+  like_count?: number;
+  quote_count?: number;
+  impression_count?: number;
+  followers_count?: number;
+  following_count?: number;
+  tweet_count?: number;
+  listed_count?: number;
+}
+
+export interface XResearchPost {
+  post_id: string;
+  text: string;
+  author_id: string;
+  username: string;
+  post_url: string;
+  public_metrics: XPublicMetrics;
+  matched_keywords: string[];
+  created_at?: string;
+  saved_at: string;
+  research_status: AutomationActionStatus;
+}
+
+export interface XQueryHistoryEntry {
+  query_id: string;
+  client_id: string;
+  command: string;
+  mode: "mock" | "api";
+  keywords: string[];
+  username?: string;
+  requested_limit?: number;
+  returned_count: number;
+  saved_count: number;
+  result_ids?: string[];
+  estimated_cost: number;
+  api_calls: number;
+  cache_hits: number;
+  result_file: string;
+  created_at: string;
+}
+
+export interface XKolProspect {
+  prospect_id: string;
+  client_id: string;
+  source: "keyword_search" | "competitor_mining" | "manual" | "mock";
+  user_id: string;
+  username: string;
+  display_name: string;
+  profile_url: string;
+  bio: string;
+  public_metrics: XPublicMetrics;
+  recent_posts: XResearchPost[];
+  matched_keywords: string[];
+  kol_score: number;
+  engagement_score?: number;
+  content_match_score?: number;
+  follower_score?: number;
+  audience_fit_score?: number;
+  collaboration_score?: number;
+  kol_priority?: "high_priority" | "medium_priority" | "watchlist" | "ignored";
+  collaboration_status?: "new" | "priority" | "contacted" | "rejected" | "watchlist";
+  prospect_status: AutomationActionStatus;
+  notes: string;
+  saved_at: string;
+  updated_at: string;
+}
+
+export interface XLeadCandidate {
+  candidate_id: string;
+  client_id: string;
+  platform: "x";
+  source_post_id: string;
+  source_url: string;
+  user_id: string;
+  username: string;
+  display_name: string;
+  message_text: string;
+  matched_keywords: string[];
+  intent_score: number;
+  buyer_intent_score?: number;
+  industry_match_score?: number;
+  urgency_score?: number;
+  negative_score?: number;
+  reply_value_score?: number;
+  lead_priority?: "high" | "medium" | "low" | "ignore";
+  candidate_status: AutomationActionStatus;
+  recommended_reply: string;
+  saved_at: string;
+  updated_at: string;
+}
+
+export interface XEngagementItem {
+  engagement_id: string;
+  client_id: string;
+  platform: "x";
+  account_id: string;
+  source_type: "mention" | "reply" | "quote" | "dm" | "manual" | "mock";
+  source_id: string;
+  source_url: string | null;
+  user_id: string;
+  username: string;
+  text: string;
+  classification: "lead" | "complaint" | "question" | "partnership" | "spam" | "general_engagement";
+  lead_score: number;
+  action_status: AutomationActionStatus;
+  saved_at: string;
   updated_at: string;
 }

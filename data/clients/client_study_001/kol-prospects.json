@@ -1,0 +1,227 @@
+[
+  {
+    "prospect_id": "kol_mock_author_0",
+    "client_id": "client_study_001",
+    "source": "competitor_mining",
+    "user_id": "mock_author_0",
+    "username": "mock_x_user_0",
+    "display_name": "mock_x_user_0",
+    "profile_url": "https://x.com/mock_x_user_0",
+    "bio": "",
+    "public_metrics": {
+      "like_count": 10,
+      "reply_count": 1,
+      "retweet_count": 0,
+      "quote_count": 0,
+      "impression_count": 0
+    },
+    "recent_posts": [
+      {
+        "post_id": "mock_x_post_competitor_demo_0",
+        "text": "competitor_demo - looking for recommendations and practical next steps for overseas growth.",
+        "author_id": "mock_author_0",
+        "username": "mock_x_user_0",
+        "post_url": "https://x.com/mock_x_user_0/status/mock_x_post_0",
+        "public_metrics": {
+          "like_count": 10,
+          "reply_count": 1,
+          "retweet_count": 0,
+          "quote_count": 0
+        },
+        "matched_keywords": [
+          "competitor_demo"
+        ],
+        "saved_at": "2026-05-10T14:35:15.639Z",
+        "research_status": "suggested"
+      }
+    ],
+    "matched_keywords": [
+      "competitor_demo"
+    ],
+    "kol_score": 13,
+    "prospect_status": "suggested",
+    "notes": "Phase 1 discovery only. Do not auto-follow, auto-comment, or auto-DM.",
+    "saved_at": "2026-05-10T14:35:15.640Z",
+    "updated_at": "2026-05-10T14:35:15.640Z"
+  },
+  {
+    "prospect_id": "kol_mock_author_1",
+    "client_id": "client_study_001",
+    "source": "competitor_mining",
+    "user_id": "mock_author_1",
+    "username": "mock_x_user_1",
+    "display_name": "mock_x_user_1",
+    "profile_url": "https://x.com/mock_x_user_1",
+    "bio": "",
+    "public_metrics": {
+      "like_count": 11,
+      "reply_count": 2,
+      "retweet_count": 1,
+      "quote_count": 0,
+      "impression_count": 0
+    },
+    "recent_posts": [
+      {
+        "post_id": "mock_x_post_recommendation_1",
+        "text": "recommendation - looking for recommendations and practical next steps for overseas growth.",
+        "author_id": "mock_author_1",
+        "username": "mock_x_user_1",
+        "post_url": "https://x.com/mock_x_user_1/status/mock_x_post_1",
+        "public_metrics": {
+          "like_count": 11,
+          "reply_count": 2,
+          "retweet_count": 1,
+          "quote_count": 0
+        },
+        "matched_keywords": [
+          "recommendation"
+        ],
+        "saved_at": "2026-05-10T14:35:15.639Z",
+        "research_status": "suggested"
+      }
+    ],
+    "matched_keywords": [
+      "recommendation"
+    ],
+    "kol_score": 21,
+    "prospect_status": "suggested",
+    "notes": "Phase 1 discovery only. Do not auto-follow, auto-comment, or auto-DM.",
+    "saved_at": "2026-05-10T14:35:15.640Z",
+    "updated_at": "2026-05-10T14:35:15.640Z"
+  },
+  {
+    "prospect_id": "kol_mock_author_2",
+    "client_id": "client_study_001",
+    "source": "competitor_mining",
+    "user_id": "mock_author_2",
+    "username": "mock_x_user_2",
+    "display_name": "mock_x_user_2",
+    "profile_url": "https://x.com/mock_x_user_2",
+    "bio": "",
+    "public_metrics": {
+      "like_count": 12,
+      "reply_count": 3,
+      "retweet_count": 2,
+      "quote_count": 0,
+      "impression_count": 0
+    },
+    "recent_posts": [
+      {
+        "post_id": "mock_x_post_need_help_2",
+        "text": "need help - looking for recommendations and practical next steps for overseas growth.",
+        "author_id": "mock_author_2",
+        "username": "mock_x_user_2",
+        "post_url": "https://x.com/mock_x_user_2/status/mock_x_post_2",
+        "public_metrics": {
+          "like_count": 12,
+          "reply_count": 3,
+          "retweet_count": 2,
+          "quote_count": 0
+        },
+        "matched_keywords": [
+          "need help"
+        ],
+        "saved_at": "2026-05-10T14:35:15.639Z",
+        "research_status": "suggested"
+      }
+    ],
+    "matched_keywords": [
+      "need help"
+    ],
+    "kol_score": 29,
+    "prospect_status": "suggested",
+    "notes": "Phase 1 discovery only. Do not auto-follow, auto-comment, or auto-DM.",
+    "saved_at": "2026-05-10T14:35:15.640Z",
+    "updated_at": "2026-05-10T14:35:15.640Z"
+  },
+  {
+    "prospect_id": "kol_mock_author_3",
+    "client_id": "client_study_001",
+    "source": "keyword_search",
+    "user_id": "mock_author_3",
+    "username": "mock_x_user_3",
+    "display_name": "mock_x_user_3",
+    "profile_url": "https://x.com/mock_x_user_3",
+    "bio": "",
+    "public_metrics": {
+      "like_count": 13,
+      "reply_count": 4,
+      "retweet_count": 3,
+      "quote_count": 0,
+      "impression_count": 0
+    },
+    "recent_posts": [
+      {
+        "post_id": "mock_x_post___3",
+        "text": "转学分 - looking for recommendations and practical next steps for overseas growth.",
+        "author_id": "mock_author_3",
+        "username": "mock_x_user_3",
+        "post_url": "https://x.com/mock_x_user_3/status/mock_x_post_3",
+        "public_metrics": {
+          "like_count": 13,
+          "reply_count": 4,
+          "retweet_count": 3,
+          "quote_count": 0
+        },
+        "matched_keywords": [
+          "转学分"
+        ],
+        "saved_at": "2026-05-10T14:35:14.345Z",
+        "research_status": "suggested"
+      }
+    ],
+    "matched_keywords": [
+      "转学分"
+    ],
+    "kol_score": 37,
+    "prospect_status": "suggested",
+    "notes": "Phase 1 discovery only. Do not auto-follow, auto-comment, or auto-DM.",
+    "saved_at": "2026-05-10T14:35:14.346Z",
+    "updated_at": "2026-05-10T14:35:14.346Z"
+  },
+  {
+    "prospect_id": "kol_mock_author_4",
+    "client_id": "client_study_001",
+    "source": "keyword_search",
+    "user_id": "mock_author_4",
+    "username": "mock_x_user_4",
+    "display_name": "mock_x_user_4",
+    "profile_url": "https://x.com/mock_x_user_4",
+    "bio": "",
+    "public_metrics": {
+      "like_count": 14,
+      "reply_count": 5,
+      "retweet_count": 4,
+      "quote_count": 0,
+      "impression_count": 0
+    },
+    "recent_posts": [
+      {
+        "post_id": "mock_x_post___4",
+        "text": "签证 - looking for recommendations and practical next steps for overseas growth.",
+        "author_id": "mock_author_4",
+        "username": "mock_x_user_4",
+        "post_url": "https://x.com/mock_x_user_4/status/mock_x_post_4",
+        "public_metrics": {
+          "like_count": 14,
+          "reply_count": 5,
+          "retweet_count": 4,
+          "quote_count": 0
+        },
+        "matched_keywords": [
+          "签证"
+        ],
+        "saved_at": "2026-05-10T14:35:14.345Z",
+        "research_status": "suggested"
+      }
+    ],
+    "matched_keywords": [
+      "签证"
+    ],
+    "kol_score": 45,
+    "prospect_status": "suggested",
+    "notes": "Phase 1 discovery only. Do not auto-follow, auto-comment, or auto-DM.",
+    "saved_at": "2026-05-10T14:35:14.346Z",
+    "updated_at": "2026-05-10T14:35:14.346Z"
+  }
+]

@@ -1,17 +1,21 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { access, readdir, readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
-import type { AccountRole, Client, ContentAngle, ContentAsset, ContentFocus, ContentTheme, Lead, Platform, PlatformAccount, PlatformCapabilities, PlatformVariant, PublishRecord, PublishTask, ReplyDraft } from "../../packages/core/types.js";
+import type { AccountRole, Client, ContentAngle, ContentAsset, ContentFocus, ContentTheme, Lead, Platform, PlatformAccount, PlatformCapabilities, PlatformVariant, PublishRecord, PublishTask, ReplyDraft, XEngagementItem, XKolProspect, XLeadCandidate, XQueryHistoryEntry, XResearchPost } from "../../packages/core/types.js";
 import { assertContentApproved, assertVariantApproved } from "../../packages/core/approval.js";
 import { categories, getCategory } from "../../packages/core/category.js";
 import { classifyIntent } from "../../packages/lead-intelligence/classifyIntent.js";
 import { generateReplyDraft } from "../../packages/lead-intelligence/generateReplyDraft.js";
 import { scoreLead, type LeadScoringRule } from "../../packages/lead-intelligence/scoreLead.js";
 import { createMockPublisher } from "../../packages/publishers/mockPublisher.js";
+import { xPublisher } from "../../packages/publishers/x/index.js";
 import { clientDir, clientFile, dataRoot, ensureClientDirectories, readClientArray, readJson, writeClientArray, writeJson } from "../../packages/storage/jsonStore.js";
 
 const port = Number(process.env.PORT ?? 4321);
 const publicDir = join(process.cwd(), "apps", "web", "public");
+const execFileAsync = promisify(execFile);
 const platforms: Platform[] = ["instagram", "tiktok", "facebook", "x", "linkedin", "youtube"];
 const publishablePlatforms: Platform[] = ["instagram", "tiktok", "facebook", "x"];
 const accountRoles: AccountRole[] = ["official_brand", "founder_voice", "expert_advisor", "case_study", "education_content", "community_account", "sales_conversion", "local_market"];
@@ -30,8 +34,17 @@ interface PublishRule {
 type PublishRules = Record<Platform, PublishRule>;
 type LeadScoringRules = Record<string, LeadScoringRule>;
 type PlatformCapabilityMap = Record<Platform, PlatformCapabilities>;
+interface XApiUsageEntry {
+  timestamp: string;
+  client_id: string;
+  method: "GET";
+  path: string;
+  url: string;
+  cost_units: number;
+  cache_hit: boolean;
+}
 const leadStages: Lead["lead_stage"][] = ["new", "qualified", "replied", "waiting_response", "booked", "converted", "not_interested", "spam"];
-const leadSourceTypes: Lead["source_type"][] = ["comment", "dm", "form", "manual", "email", "whatsapp"];
+const leadSourceTypes: Lead["source_type"][] = ["comment", "dm", "form", "manual", "email", "whatsapp", "csv"];
 
 const server = createServer(async (req, res) => {
   try {
@@ -279,6 +292,76 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/x/action") {
+    const body = await readBody<XActionRequest>(req);
+    const log = await runXAction(body);
+    sendJson(res, 200, { ...(await loadState(body.client_id)), x_action_log: log });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/research/update") {
+    const body = await readBody<{ client_id: string; post_id: string; research_status: XResearchPost["research_status"] }>(req);
+    await updateXResearchPost(body);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/research/save-content") {
+    const body = await readBody<{ client_id: string; post_id: string }>(req);
+    await saveXResearchAsContentIdea(body);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/kol/update") {
+    const body = await readBody<{ client_id: string; prospect_id: string; collaboration_status?: XKolProspect["collaboration_status"]; prospect_status?: XKolProspect["prospect_status"]; notes?: string }>(req);
+    await updateXKolProspect(body);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/lead/convert") {
+    const body = await readBody<{ client_id: string; candidate_id: string; generate_reply?: boolean }>(req);
+    await convertXLeadCandidate(body.client_id, body.candidate_id, Boolean(body.generate_reply));
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/lead/reply-draft") {
+    const body = await readBody<{ client_id: string; candidate_id: string }>(req);
+    await convertXLeadCandidate(body.client_id, body.candidate_id, true);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/lead/update") {
+    const body = await readBody<{ client_id: string; candidate_id: string; candidate_status: XLeadCandidate["candidate_status"] }>(req);
+    await updateXLeadCandidate(body);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/engagement/update") {
+    const body = await readBody<{ client_id: string; engagement_id: string; classification?: XEngagementItem["classification"]; action_status?: XEngagementItem["action_status"] }>(req);
+    await updateXEngagementItem(body);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/engagement/convert-lead") {
+    const body = await readBody<{ client_id: string; engagement_id: string }>(req);
+    await convertXEngagementToLead(body.client_id, body.engagement_id, false);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/engagement/reply-draft") {
+    const body = await readBody<{ client_id: string; engagement_id: string }>(req);
+    await convertXEngagementToLead(body.client_id, body.engagement_id, true);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
   sendJson(res, 404, { error: "API route not found" });
 }
 
@@ -286,6 +369,7 @@ async function loadState(clientId: string) {
   const client = await readJson<Client | null>(clientFile(clientId, "client.json"), null);
   if (!client) throw new Error(`Client ${clientId} not found. Run npm run demo:seed first.`);
 
+  const xJsonErrors: Array<{ file: string; message: string }> = [];
   const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
   const contents = await readClientArray<ContentAsset>(clientId, "content-pool.json");
   const variants = await readClientArray<PlatformVariant>(clientId, "platform-variants.json");
@@ -293,6 +377,14 @@ async function loadState(clientId: string) {
   const records = await readClientArray<PublishRecord>(clientId, "publish-records.json");
   const leads = await readClientArray<Lead>(clientId, "leads.json");
   const drafts = await readClientArray<ReplyDraft>(clientId, "reply-drafts.json");
+  const xResearchPosts = await readSafeClientArray<XResearchPost>(clientId, "x-research-posts.json", xJsonErrors);
+  const xKolProspects = await readSafeClientArray<XKolProspect>(clientId, "kol-prospects.json", xJsonErrors);
+  const xLeadCandidates = await readSafeClientArray<XLeadCandidate>(clientId, "lead-candidates.json", xJsonErrors);
+  const xEngagementInbox = await readSafeClientArray<XEngagementItem>(clientId, "x-engagement-inbox.json", xJsonErrors);
+  const xQueryHistory = await readSafeClientArray<XQueryHistoryEntry>(clientId, "x-query-history.json", xJsonErrors);
+  const xApiUsage = await readSafeClientArray<XApiUsageEntry>(clientId, "x-api-usage.json", xJsonErrors);
+  const xReports = await readXReports(clientId, xJsonErrors);
+  const xBudget = buildXBudgetSummary(client, xApiUsage);
 
   return {
     clients: await listClients(),
@@ -316,6 +408,17 @@ async function loadState(clientId: string) {
     records,
     leads,
     drafts,
+    x: {
+      research_posts: xResearchPosts,
+      kol_prospects: xKolProspects,
+      lead_candidates: xLeadCandidates,
+      engagement_inbox: xEngagementInbox,
+      reports: xReports,
+      query_history: xQueryHistory,
+      api_usage: xApiUsage,
+      budget: xBudget,
+      json_errors: xJsonErrors
+    },
     account_stats: buildAccountStats(accounts, queue, records, leads),
     summary: {
       active_accounts: accounts.filter((item) => item.status === "active").length,
@@ -361,6 +464,14 @@ interface LeadImportRequest {
   next_follow_up_at?: string | null;
   contact_method?: Lead["contact_method"];
   lead_notes?: string[];
+}
+
+interface XActionRequest {
+  client_id: string;
+  action: "research" | "kol" | "competitor" | "lead" | "engagement" | "dm" | "report";
+  mode?: "mock" | "api";
+  keywords?: string;
+  username?: string;
 }
 
 async function createAccount(body: AccountRequest): Promise<void> {
@@ -998,8 +1109,10 @@ async function runPublish(clientId: string): Promise<void> {
       continue;
     }
     if (!variant) continue;
-    const result = await createMockPublisher(task.platform).publish(task, variant);
+    const publisher = task.platform === "x" ? xPublisher : createMockPublisher(task.platform);
+    const result = await publisher.publish(task, variant);
     if (result.ok) {
+      const recordUrl = result.post_url ?? result.mock_url ?? `https://mock.social/${task.platform}/${result.platform_post_id ?? task.publish_task_id}`;
       task.status = "published";
       task.platform_post_id = result.platform_post_id;
       task.published_at = new Date().toISOString();
@@ -1019,8 +1132,9 @@ async function runPublish(clientId: string): Promise<void> {
         platform_post_id: result.platform_post_id ?? `${task.platform}_mock_${task.publish_task_id}`,
         published_at: task.published_at,
         status: "published",
-        publish_mode: "mock",
-        mock_url: result.mock_url ?? `https://mock.social/${task.platform}/${result.platform_post_id ?? task.publish_task_id}`
+        publish_mode: result.publish_mode ?? (task.publish_method === "official_api" ? "api" : "mock"),
+        mock_url: result.mock_url ?? recordUrl,
+        post_url: recordUrl
       });
     } else {
       registerPublishFailure(task, result.error_message ?? "Unknown publish error");
@@ -1173,6 +1287,7 @@ function leadStageFromScore(score: number, rule?: LeadScoringRule, existing?: Le
 
 function leadSourceMode(sourceType: Lead["source_type"], account: PlatformAccount, capabilities: PlatformCapabilityMap): Lead["source_mode"] {
   const capability = mergedCapabilities(account.platform, account, capabilities);
+  if (sourceType === "csv") return "csv";
   if (sourceType === "manual" || sourceType === "form" || sourceType === "email" || sourceType === "whatsapp") return "manual";
   if (sourceType === "comment" && capability.can_read_comments === false) return "manual";
   if (sourceType === "dm" && capability.can_read_dm === false) return "manual";
@@ -1235,6 +1350,9 @@ async function checkPublishReadiness(input: {
   if (account.status !== "active") return { ready: false, reason: `Account ${task.account_id} is not active` };
   if (!account.posting_enabled) return { ready: false, reason: `Account ${task.account_id} has posting disabled` };
   if (!publishablePlatforms.includes(task.platform)) return { ready: false, reason: `${task.platform} is reserved and cannot publish in Phase 1` };
+  if (task.publish_method === "official_api" && account.auth_status !== "connected") {
+    return { ready: false, reason: `Account ${task.account_id} must have auth_status connected for official API publishing` };
+  }
   const taskCapability = mergedCapabilities(task.platform, account, capabilities);
   if (task.publish_method === "official_api" && taskCapability.supports_real_api === false) {
     return { ready: false, reason: `${task.platform} does not support real API publishing; use mock or manual workflow` };
@@ -1431,6 +1549,279 @@ async function writeWeeklyReport(clientId: string): Promise<void> {
     ]
   };
   await writeJson(join(clientDir(clientId), "reports", "weekly", `${weekStart}_${weekEnd}.json`), report);
+}
+
+async function runXAction(body: XActionRequest): Promise<string> {
+  const commandMap: Record<XActionRequest["action"], string> = {
+    research: "x:research:search",
+    kol: "x:kol:discover",
+    competitor: "x:competitor:mine",
+    lead: "x:lead:discover",
+    engagement: "x:engagement:sync",
+    dm: "x:dm:sync",
+    report: "x:report"
+  };
+  const command = commandMap[body.action];
+  const cliArgs = ["apps/worker/cli.ts", command, "--client_id", body.client_id];
+  if (body.action !== "report") {
+    cliArgs.push("--mode", body.mode ?? "mock");
+  }
+  if (body.keywords?.trim() && ["research", "kol", "lead"].includes(body.action)) {
+    cliArgs.push("--keywords", body.keywords.trim());
+  }
+  if (body.action === "competitor") {
+    cliArgs.push("--username", body.username?.trim() || "competitor_demo");
+  }
+  const tsxBin = join(process.cwd(), "node_modules", ".bin", "tsx");
+  const { stdout, stderr } = await execFileAsync(tsxBin, cliArgs, {
+    cwd: process.cwd(),
+    maxBuffer: 1024 * 1024
+  });
+  return [stdout, stderr].filter(Boolean).join("\n").trim();
+}
+
+async function updateXResearchPost(body: { client_id: string; post_id: string; research_status: XResearchPost["research_status"] }): Promise<void> {
+  const posts = await readClientArray<XResearchPost>(body.client_id, "x-research-posts.json");
+  const post = posts.find((item) => item.post_id === body.post_id);
+  if (!post) throw new Error(`X research post ${body.post_id} not found`);
+  post.research_status = body.research_status;
+  post.saved_at = new Date().toISOString();
+  await writeClientArray(body.client_id, "x-research-posts.json", posts);
+}
+
+async function saveXResearchAsContentIdea(body: { client_id: string; post_id: string }): Promise<void> {
+  const client = await readJson<Client>(clientFile(body.client_id, "client.json"), null as unknown as Client);
+  const posts = await readClientArray<XResearchPost>(body.client_id, "x-research-posts.json");
+  const post = posts.find((item) => item.post_id === body.post_id);
+  if (!post) throw new Error(`X research post ${body.post_id} not found`);
+  const contents = await readClientArray<ContentAsset>(body.client_id, "content-pool.json");
+  const now = new Date().toISOString();
+  contents.push({
+    content_id: makeId("content_x_idea"),
+    client_id: body.client_id,
+    category_id: client.industry,
+    content_theme: "pain_point",
+    content_type: "text_post",
+    content_angle: "problem_solution",
+    title: `X idea from @${post.username}`,
+    hook: post.text.slice(0, 180),
+    main_points: [
+      `Source post: ${post.post_url}`,
+      `Matched keywords: ${(post.matched_keywords ?? []).join(", ") || "none"}`,
+      "Turn this into an approved content asset before publishing."
+    ],
+    cta: "Review this idea and write a platform-specific CTA.",
+    language: client.language[0] ?? "en",
+    target_audience: client.target_audience,
+    funnel_stage: "awareness",
+    media_assets: [],
+    status: "draft",
+    created_by: "x-research",
+    approved_by_human: false,
+    created_at: now,
+    updated_at: now
+  });
+  post.research_status = "manually_completed";
+  post.saved_at = now;
+  await writeClientArray(body.client_id, "content-pool.json", contents);
+  await writeClientArray(body.client_id, "x-research-posts.json", posts);
+}
+
+async function updateXKolProspect(body: { client_id: string; prospect_id: string; collaboration_status?: XKolProspect["collaboration_status"]; prospect_status?: XKolProspect["prospect_status"]; notes?: string }): Promise<void> {
+  const prospects = await readClientArray<XKolProspect>(body.client_id, "kol-prospects.json");
+  const prospect = prospects.find((item) => item.prospect_id === body.prospect_id);
+  if (!prospect) throw new Error(`KOL prospect ${body.prospect_id} not found`);
+  if (body.collaboration_status) prospect.collaboration_status = body.collaboration_status;
+  if (body.prospect_status) prospect.prospect_status = body.prospect_status;
+  if (body.notes !== undefined) prospect.notes = body.notes;
+  prospect.updated_at = new Date().toISOString();
+  await writeClientArray(body.client_id, "kol-prospects.json", prospects);
+}
+
+async function convertXLeadCandidate(clientId: string, candidateId: string, shouldGenerateReply: boolean): Promise<void> {
+  const client = await readJson<Client>(clientFile(clientId, "client.json"), null as unknown as Client);
+  const category = getCategory(client.industry);
+  const rule = (await readLeadScoringRules())[client.industry];
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const account = accounts.find((item) => item.platform === "x" && item.status === "active");
+  if (!account) throw new Error(`No active X account found for ${clientId}`);
+  const candidates = await readClientArray<XLeadCandidate>(clientId, "lead-candidates.json");
+  const candidate = candidates.find((item) => item.candidate_id === candidateId);
+  if (!candidate) throw new Error(`X lead candidate ${candidateId} not found`);
+  const leads = await readClientArray<Lead>(clientId, "leads.json");
+  let lead = leads.find((item) => item.source_post_id === candidate.source_post_id && item.user_handle === candidate.username);
+  const now = new Date().toISOString();
+  if (!lead) {
+    const score = scoreLead(candidate.message_text, category, rule);
+    lead = {
+      lead_id: makeId("lead"),
+      client_id: clientId,
+      platform: "x",
+      account_id: account.account_id,
+      source_type: "manual",
+      source_mode: "manual",
+      source_post_id: candidate.source_post_id,
+      source_url: candidate.source_url,
+      user_handle: candidate.username,
+      user_display_name: candidate.display_name || candidate.username,
+      message_text: candidate.message_text,
+      detected_intent: classifyIntent(candidate.message_text, rule),
+      lead_score: Math.max(score, candidate.intent_score ?? 0),
+      lead_stage: Math.max(score, candidate.intent_score ?? 0) >= 60 ? "qualified" : "new",
+      recommended_reply: candidate.recommended_reply,
+      human_review_required: true,
+      assigned_to: "",
+      next_follow_up_at: null,
+      last_contacted_at: null,
+      contact_method: "unknown",
+      lead_notes: ["Converted from X lead candidate. Manual follow-up required."],
+      created_at: now,
+      updated_at: now
+    };
+    leads.push(lead);
+  }
+  candidate.candidate_status = "manually_completed";
+  candidate.updated_at = now;
+  await writeClientArray(clientId, "leads.json", leads);
+  await writeClientArray(clientId, "lead-candidates.json", candidates);
+  if (shouldGenerateReply) {
+    await createReplyDraftForLead(client, lead, account.account_id);
+  }
+}
+
+async function updateXEngagementItem(body: { client_id: string; engagement_id: string; classification?: XEngagementItem["classification"]; action_status?: XEngagementItem["action_status"] }): Promise<void> {
+  const inbox = await readClientArray<XEngagementItem>(body.client_id, "x-engagement-inbox.json");
+  const item = inbox.find((entry) => entry.engagement_id === body.engagement_id);
+  if (!item) throw new Error(`X engagement item ${body.engagement_id} not found`);
+  if (body.classification) item.classification = body.classification;
+  if (body.action_status) item.action_status = body.action_status;
+  item.updated_at = new Date().toISOString();
+  await writeClientArray(body.client_id, "x-engagement-inbox.json", inbox);
+}
+
+async function updateXLeadCandidate(body: { client_id: string; candidate_id: string; candidate_status: XLeadCandidate["candidate_status"] }): Promise<void> {
+  const candidates = await readClientArray<XLeadCandidate>(body.client_id, "lead-candidates.json");
+  const candidate = candidates.find((item) => item.candidate_id === body.candidate_id);
+  if (!candidate) throw new Error(`X lead candidate ${body.candidate_id} not found`);
+  candidate.candidate_status = body.candidate_status;
+  candidate.updated_at = new Date().toISOString();
+  await writeClientArray(body.client_id, "lead-candidates.json", candidates);
+}
+
+async function convertXEngagementToLead(clientId: string, engagementId: string, shouldGenerateReply: boolean): Promise<void> {
+  const client = await readJson<Client>(clientFile(clientId, "client.json"), null as unknown as Client);
+  const category = getCategory(client.industry);
+  const rule = (await readLeadScoringRules())[client.industry];
+  const inbox = await readClientArray<XEngagementItem>(clientId, "x-engagement-inbox.json");
+  const item = inbox.find((entry) => entry.engagement_id === engagementId);
+  if (!item) throw new Error(`X engagement item ${engagementId} not found`);
+  const leads = await readClientArray<Lead>(clientId, "leads.json");
+  const now = new Date().toISOString();
+  let lead = leads.find((entry) => entry.source_post_id === item.source_id && entry.user_handle === item.username);
+  if (!lead) {
+    const score = scoreLead(item.text, category, rule);
+    lead = {
+      lead_id: makeId("lead"),
+      client_id: clientId,
+      platform: "x",
+      account_id: item.account_id,
+      source_type: item.source_type === "dm" ? "dm" : "comment",
+      source_mode: "manual",
+      source_post_id: item.source_id,
+      source_url: item.source_url,
+      user_handle: item.username,
+      user_display_name: item.username,
+      message_text: item.text,
+      detected_intent: classifyIntent(item.text, rule),
+      lead_score: Math.max(score, item.lead_score ?? 0),
+      lead_stage: Math.max(score, item.lead_score ?? 0) >= 60 ? "qualified" : "new",
+      recommended_reply: "Review this X interaction and reply manually if appropriate.",
+      human_review_required: true,
+      assigned_to: "",
+      next_follow_up_at: null,
+      last_contacted_at: null,
+      contact_method: item.source_type === "dm" ? "dm" : "comment",
+      lead_notes: ["Created from X engagement inbox. Manual reply only."],
+      created_at: now,
+      updated_at: now
+    };
+    leads.push(lead);
+    await writeClientArray(clientId, "leads.json", leads);
+  }
+  if (shouldGenerateReply) {
+    await createReplyDraftForLead(client, lead, item.account_id);
+  }
+  item.action_status = "manually_completed";
+  item.updated_at = now;
+  await writeClientArray(clientId, "x-engagement-inbox.json", inbox);
+}
+
+async function createReplyDraftForLead(client: Client, lead: Lead, accountId: string): Promise<void> {
+  const drafts = await readClientArray<ReplyDraft>(client.client_id, "reply-drafts.json");
+  if (drafts.some((draft) => draft.lead_id === lead.lead_id && draft.platform === "x")) return;
+  const now = new Date().toISOString();
+  drafts.push({
+    reply_draft_id: makeId("reply"),
+    lead_id: lead.lead_id,
+    client_id: client.client_id,
+    platform: "x",
+    account_id: accountId,
+    draft_text: generateReplyDraft(client, lead),
+    tone: client.brand_tone,
+    approval_status: "draft",
+    rejection_reason: null,
+    sent_status: "not_sent",
+    created_at: now,
+    updated_at: now
+  });
+  await writeClientArray(client.client_id, "reply-drafts.json", drafts);
+}
+
+async function readSafeClientArray<T>(clientId: string, fileName: string, errors: Array<{ file: string; message: string }>): Promise<T[]> {
+  try {
+    return await readClientArray<T>(clientId, fileName);
+  } catch (error) {
+    errors.push({ file: fileName, message: error instanceof Error ? error.message : "Malformed JSON" });
+    return [];
+  }
+}
+
+function buildXBudgetSummary(client: Client, usage: XApiUsageEntry[]) {
+  const month = new Date().toISOString().slice(0, 7);
+  const budget = Number(client.monthly_api_budget ?? 0);
+  const used = usage
+    .filter((entry) => entry.timestamp?.startsWith(month))
+    .reduce((total, entry) => total + Number(entry.cost_units || 0), 0);
+  return {
+    month,
+    monthly_api_budget: budget,
+    budget_warn_at: Number(client.budget_warn_at ?? 0),
+    budget_block_at: Number(client.budget_block_at ?? 0),
+    max_cost_per_command: Number(client.max_cost_per_command ?? 0),
+    default_x_search_limit: Number(client.default_x_search_limit ?? 0),
+    default_kol_discovery_limit: Number(client.default_kol_discovery_limit ?? 0),
+    budget_used: used,
+    budget_remaining: budget > 0 ? Math.max(0, budget - used) : null
+  };
+}
+
+async function readXReports(clientId: string, errors: Array<{ file: string; message: string }>): Promise<Array<Record<string, unknown>>> {
+  const dir = join(clientDir(clientId), "reports", "x");
+  try {
+    const files = (await readdir(dir)).filter((file) => file.endsWith(".json")).sort().reverse();
+    const reports = [];
+    for (const file of files.slice(0, 10)) {
+      try {
+        reports.push(await readJson<Record<string, unknown>>(join(dir, file), {}));
+      } catch (error) {
+        errors.push({ file: `reports/x/${file}`, message: error instanceof Error ? error.message : "Malformed JSON" });
+      }
+    }
+    return reports;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
 }
 
 function startOfWeek(date: Date): Date {
