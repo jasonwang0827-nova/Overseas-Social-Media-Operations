@@ -1,0 +1,18 @@
+{
+  "client_id": "client_brand_001",
+  "week_start": "2026-05-04",
+  "week_end": "2026-05-10",
+  "published_count": 0,
+  "platform_publish_status": {},
+  "failed_tasks": [],
+  "retry_pending_tasks": [],
+  "new_leads": 0,
+  "high_value_leads": [],
+  "follow_up_required": [],
+  "top_content_themes": {},
+  "next_week_recommendations": [
+    "复用高意图线索对应的内容主题。",
+    "优先跟进高分线索并记录联系结果。",
+    "继续保持每个平台差异化版本发布。"
+  ]
+}

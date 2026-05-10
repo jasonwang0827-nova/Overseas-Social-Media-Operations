@@ -1,1 +1,1 @@
-export type { PlatformAccount } from "./types.js";
+export type { AccountRole, AccountStatus, AuthStatus, ContentFocus, PlatformAccount } from "./types.js";

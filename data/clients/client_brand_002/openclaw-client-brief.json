@@ -1,0 +1,21 @@
+{
+  "client_id": "client_brand_002",
+  "source": "openclaw_background_intake",
+  "business_summary": "Adult product manufacturer and OEM/ODM supplier based in China, founded in 1992. Specializes in male masturbators, automatic masturbators, and realistic skin-material products under the Cyberskin brand. Seeking North American B2B clients for factory production partnerships.",
+  "category_id": "brand_global",
+  "target_audience": ["North American adult product brands", "retailers", "distributors"],
+  "services": ["OEM manufacturing", "ODM product development", "private label production", "factory sourcing"],
+  "preferred_platforms": ["instagram", "facebook", "linkedin", "x"],
+  "content_direction": ["factory capability showcase", "manufacturing process", "B2B partnership pitches"],
+  "lead_goal": ["OEM ODM inquiries", "wholesale partnerships", "factory visit inquiries"],
+  "brand_tone": "professional manufacturer, experienced since 1992, quality craftsmanship",
+  "compliance_notes": "B2B content is more lenient than D2C adult content. Focus on manufacturing capability rather than product usage.",
+  "open_questions": [
+    "Minimum order quantities",
+    "Lead time for new orders",
+    "Certifications and quality standards",
+    "Budget tier for services"
+  ],
+  "next_step": "Generate platform accounts, account personas, content roles, service keywords, lead keywords, and initial content assets.",
+  "created_at": "2026-05-09T23:53:10.000Z"
+}

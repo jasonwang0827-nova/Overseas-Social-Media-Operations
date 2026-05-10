@@ -103,12 +103,12 @@
       "lead_notes": []
     }
   ],
-  "top_content_themes": {
+  "best_content_themes": {
     "college_transfer": 1
   },
   "next_week_recommendations": [
-    "复用高意图线索对应的内容主题。",
-    "优先跟进高分线索并记录联系结果。",
-    "继续保持每个平台差异化版本发布。"
+    "继续复用表现中的内容主题：college_transfer",
+    "围绕高意图线索继续制作内容：transfer_credit",
+    "优先检查所有高分线索，并安排人工跟进。"
   ]
 }

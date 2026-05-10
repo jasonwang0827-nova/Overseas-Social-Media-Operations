@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readdir, readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
-import type { Client, ContentAsset, Lead, PlatformAccount, PlatformVariant, PublishRecord, PublishTask, ReplyDraft } from "../../packages/core/types.js";
+import type { AccountRole, Client, ContentAsset, ContentFocus, Lead, Platform, PlatformAccount, PlatformVariant, PublishRecord, PublishTask, ReplyDraft } from "../../packages/core/types.js";
 import { assertVariantApproved } from "../../packages/core/approval.js";
 import { categories, getCategory } from "../../packages/core/category.js";
 import { classifyIntent } from "../../packages/lead-intelligence/classifyIntent.js";
@@ -12,6 +12,10 @@ import { clientDir, clientFile, dataRoot, ensureClientDirectories, readClientArr
 
 const port = Number(process.env.PORT ?? 4321);
 const publicDir = join(process.cwd(), "apps", "web", "public");
+const platforms: Platform[] = ["instagram", "tiktok", "facebook", "x", "linkedin", "youtube"];
+const publishablePlatforms: Platform[] = ["instagram", "tiktok", "facebook", "x"];
+const accountRoles: AccountRole[] = ["official_brand", "founder_voice", "expert_advisor", "case_study", "education_content", "community_account", "sales_conversion", "local_market"];
+const contentFocuses: ContentFocus[] = ["brand_awareness", "lead_generation", "trust_building", "product_education", "case_study", "community_engagement", "sales_conversion", "customer_support"];
 
 const server = createServer(async (req, res) => {
   try {
@@ -47,6 +51,27 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
   if (req.method === "POST" && url.pathname === "/api/client/create") {
     const body = await readBody<CreateClientRequest>(req);
     await createClient(body);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/account/create") {
+    const body = await readBody<AccountRequest>(req);
+    await createAccount(body);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/account/update") {
+    const body = await readBody<AccountRequest & { account_id: string }>(req);
+    await updateAccount(body);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/account/toggle") {
+    const body = await readBody<{ client_id: string; account_id: string; field: "posting_enabled" | "lead_tracking_enabled"; value: boolean }>(req);
+    await toggleAccount(body);
     sendJson(res, 200, await loadState(body.client_id));
     return;
   }
@@ -128,6 +153,9 @@ async function loadState(clientId: string) {
   return {
     clients: await listClients(),
     categories,
+    platform_options: platforms,
+    account_role_options: accountRoles,
+    content_focus_options: contentFocuses,
     client,
     accounts,
     contents,
@@ -136,6 +164,7 @@ async function loadState(clientId: string) {
     records,
     leads,
     drafts,
+    account_stats: buildAccountStats(accounts, queue, records, leads),
     summary: {
       active_accounts: accounts.filter((item) => item.status === "active").length,
       content_assets: contents.length,
@@ -145,6 +174,108 @@ async function loadState(clientId: string) {
       high_score_leads: leads.filter((item) => item.lead_score >= 70).length
     }
   };
+}
+
+interface AccountRequest {
+  client_id: string;
+  account_id?: string;
+  platform: Platform;
+  account_name: string;
+  display_name: string;
+  account_url: string | null;
+  language: string;
+  region: string;
+  account_role: AccountRole;
+  content_focus: ContentFocus;
+  posting_enabled: boolean;
+  lead_tracking_enabled: boolean;
+  auth_status?: PlatformAccount["auth_status"];
+  status?: PlatformAccount["status"];
+  notes: string;
+}
+
+async function createAccount(body: AccountRequest): Promise<void> {
+  if (!body.client_id) throw new Error("client_id is required.");
+  await readJson<Client>(clientFile(body.client_id, "client.json"), null as unknown as Client);
+  validateAccountRequest(body);
+  const accounts = await readClientArray<PlatformAccount>(body.client_id, "accounts.json");
+  const now = new Date().toISOString();
+  const accountId = body.account_id || `${body.platform}_${makeId("account")}`;
+  if (accounts.some((account) => account.account_id === accountId)) {
+    throw new Error(`Account ${accountId} already exists under ${body.client_id}.`);
+  }
+  const account: PlatformAccount = {
+    account_id: accountId,
+    client_id: body.client_id,
+    platform: body.platform,
+    account_name: body.account_name,
+    display_name: body.display_name || body.account_name,
+    account_url: body.account_url || null,
+    language: body.language || "en",
+    region: body.region || "Canada",
+    account_role: body.account_role,
+    content_focus: body.content_focus,
+    posting_enabled: body.posting_enabled,
+    lead_tracking_enabled: body.lead_tracking_enabled,
+    auth_status: body.auth_status ?? "mock",
+    status: body.status ?? "active",
+    notes: body.notes || "",
+    created_at: now,
+    updated_at: now
+  };
+  accounts.push(account);
+  await writeClientArray(body.client_id, "accounts.json", accounts);
+}
+
+async function updateAccount(body: AccountRequest & { account_id: string }): Promise<void> {
+  validateAccountRequest(body);
+  const accounts = await readClientArray<PlatformAccount>(body.client_id, "accounts.json");
+  const account = accounts.find((item) => item.account_id === body.account_id);
+  if (!account) throw new Error(`Account ${body.account_id} not found.`);
+  Object.assign(account, {
+    platform: body.platform,
+    account_name: body.account_name,
+    display_name: body.display_name || body.account_name,
+    account_url: body.account_url || null,
+    language: body.language || "en",
+    region: body.region || "Canada",
+    account_role: body.account_role,
+    content_focus: body.content_focus,
+    posting_enabled: body.posting_enabled,
+    lead_tracking_enabled: body.lead_tracking_enabled,
+    auth_status: body.auth_status ?? account.auth_status,
+    status: body.status ?? account.status,
+    notes: body.notes || "",
+    updated_at: new Date().toISOString()
+  });
+  await writeClientArray(body.client_id, "accounts.json", accounts);
+}
+
+async function toggleAccount(body: { client_id: string; account_id: string; field: "posting_enabled" | "lead_tracking_enabled"; value: boolean }): Promise<void> {
+  const accounts = await readClientArray<PlatformAccount>(body.client_id, "accounts.json");
+  const account = accounts.find((item) => item.account_id === body.account_id);
+  if (!account) throw new Error(`Account ${body.account_id} not found.`);
+  account[body.field] = body.value;
+  account.updated_at = new Date().toISOString();
+  await writeClientArray(body.client_id, "accounts.json", accounts);
+}
+
+function validateAccountRequest(body: AccountRequest): void {
+  if (!platforms.includes(body.platform)) throw new Error(`Invalid platform: ${body.platform}`);
+  if (!accountRoles.includes(body.account_role)) throw new Error(`Invalid account_role: ${body.account_role}`);
+  if (!contentFocuses.includes(body.content_focus)) throw new Error(`Invalid content_focus: ${body.content_focus}`);
+  if (!body.account_name) throw new Error("account_name is required.");
+}
+
+function buildAccountStats(accounts: PlatformAccount[], queue: PublishTask[], records: PublishRecord[], leads: Lead[]) {
+  return accounts.reduce<Record<string, { queued: number; published: number; leads: number }>>((acc, account) => {
+    acc[account.account_id] = {
+      queued: account.status === "active" ? queue.filter((task) => task.account_id === account.account_id).length : 0,
+      published: account.status === "active" ? records.filter((record) => record.account_id === account.account_id).length : 0,
+      leads: account.status === "active" && account.lead_tracking_enabled ? leads.filter((lead) => lead.account_id === account.account_id).length : 0
+    };
+    return acc;
+  }, {});
 }
 
 interface CreateClientRequest {
@@ -250,9 +381,9 @@ async function runPublish(clientId: string): Promise<void> {
       task.last_error = task.error_message;
       continue;
     }
-    if (task.platform === "youtube") {
+    if (!publishablePlatforms.includes(task.platform)) {
       task.status = "failed";
-      task.error_message = "YouTube is reserved for Phase 2";
+      task.error_message = `${task.platform} is reserved and cannot publish in Phase 1`;
       continue;
     }
     const variant = variants.find((item) => item.variant_id === task.variant_id);
@@ -267,6 +398,14 @@ async function runPublish(clientId: string): Promise<void> {
     } catch (error) {
       task.status = "failed";
       task.error_message = error instanceof Error ? error.message : "variant must be approved before publishing";
+      task.last_error = task.error_message;
+      continue;
+    }
+    const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+    const account = accounts.find((item) => item.account_id === task.account_id);
+    if (!account || account.status !== "active" || !account.posting_enabled) {
+      task.status = "failed";
+      task.error_message = !account ? `Account ${task.account_id} was not found` : `Account ${task.account_id} cannot publish`;
       task.last_error = task.error_message;
       continue;
     }
@@ -372,15 +511,20 @@ function registerPublishFailure(task: PublishTask, message: string): void {
 async function writeDailyReport(clientId: string): Promise<void> {
   const state = await loadState(clientId);
   const date = new Date().toISOString().slice(0, 10);
+  const activeAccountIds = new Set(state.accounts.filter((account) => account.status === "active").map((account) => account.account_id));
+  const leadTrackingAccountIds = new Set(state.accounts.filter((account) => account.status === "active" && account.lead_tracking_enabled).map((account) => account.account_id));
+  const reportQueue = state.queue.filter((task) => activeAccountIds.has(task.account_id));
+  const reportRecords = state.records.filter((record) => activeAccountIds.has(record.account_id));
+  const reportLeads = state.leads.filter((lead) => leadTrackingAccountIds.has(lead.account_id));
   const report = {
     client_id: clientId,
     date,
-    publish_count: state.records.filter((record) => record.published_at?.startsWith(date)).length,
-    failed_tasks: state.queue.filter((task) => task.status === "failed"),
-    interaction_count: state.leads.filter((lead) => lead.created_at.startsWith(date)).length,
-    new_leads: state.leads.filter((lead) => lead.created_at.startsWith(date) && lead.lead_stage === "new").length,
-    high_score_leads: state.leads.filter((lead) => lead.lead_score >= 70),
-    human_follow_up_required: state.leads.filter((lead) => lead.human_review_required && lead.lead_stage !== "spam"),
+    publish_count: reportRecords.filter((record) => record.published_at?.startsWith(date)).length,
+    failed_tasks: reportQueue.filter((task) => task.status === "failed"),
+    interaction_count: reportLeads.filter((lead) => lead.created_at.startsWith(date)).length,
+    new_leads: reportLeads.filter((lead) => lead.created_at.startsWith(date) && lead.lead_stage === "new").length,
+    high_score_leads: reportLeads.filter((lead) => lead.lead_score >= 70),
+    human_follow_up_required: reportLeads.filter((lead) => lead.human_review_required && lead.lead_stage !== "spam"),
     top_content_themes: state.contents.reduce<Record<string, number>>((acc, content) => {
       acc[content.content_theme] = (acc[content.content_theme] ?? 0) + 1;
       return acc;
@@ -393,21 +537,26 @@ async function writeWeeklyReport(clientId: string): Promise<void> {
   const state = await loadState(clientId);
   const weekStart = startOfWeek(new Date()).toISOString().slice(0, 10);
   const weekEnd = endOfWeek(new Date()).toISOString().slice(0, 10);
+  const activeAccountIds = new Set(state.accounts.filter((account) => account.status === "active").map((account) => account.account_id));
+  const leadTrackingAccountIds = new Set(state.accounts.filter((account) => account.status === "active" && account.lead_tracking_enabled).map((account) => account.account_id));
+  const reportQueue = state.queue.filter((task) => activeAccountIds.has(task.account_id));
+  const reportRecords = state.records.filter((record) => activeAccountIds.has(record.account_id));
+  const reportLeads = state.leads.filter((lead) => leadTrackingAccountIds.has(lead.account_id));
   const inRange = (value: string | null): boolean => Boolean(value && value >= `${weekStart}T00:00:00` && value <= `${weekEnd}T23:59:59`);
-  const weeklyLeads = state.leads.filter((lead) => inRange(lead.created_at));
-  const weeklyRecords = state.records.filter((record) => inRange(record.published_at));
+  const weeklyLeads = reportLeads.filter((lead) => inRange(lead.created_at));
+  const weeklyRecords = reportRecords.filter((record) => inRange(record.published_at));
   const report = {
     client_id: clientId,
     week_start: weekStart,
     week_end: weekEnd,
     published_count: weeklyRecords.length,
-    platform_publish_status: state.queue.reduce<Record<string, Record<string, number>>>((acc, task) => {
+    platform_publish_status: reportQueue.reduce<Record<string, Record<string, number>>>((acc, task) => {
       acc[task.platform] ??= {};
       acc[task.platform][task.status] = (acc[task.platform][task.status] ?? 0) + 1;
       return acc;
     }, {}),
-    failed_tasks: state.queue.filter((task) => task.status === "failed"),
-    retry_pending_tasks: state.queue.filter((task) => task.next_retry_at),
+    failed_tasks: reportQueue.filter((task) => task.status === "failed"),
+    retry_pending_tasks: reportQueue.filter((task) => task.next_retry_at),
     new_leads: weeklyLeads.length,
     high_value_leads: weeklyLeads.filter((lead) => lead.lead_score >= 70),
     follow_up_required: weeklyLeads.filter((lead) => lead.human_review_required && lead.lead_stage !== "spam"),

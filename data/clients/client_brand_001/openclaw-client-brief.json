@@ -1,0 +1,20 @@
+{
+  "client_id": "client_brand_001",
+  "source": "openclaw_background_intake",
+  "business_summary": "Canada-based premium adult wellness brand specializing in high-end torso and silicone products. Products shipping to Canada in early June 2026. Needs social media built from scratch before arrival.",
+  "category_id": "brand_global",
+  "target_audience": ["North American adult product consumers", "distributors", "KOLs"],
+  "services": ["social media operations", "brand building", "content publishing", "lead generation"],
+  "preferred_platforms": ["tiktok", "instagram", "x", "facebook"],
+  "content_direction": ["product showcase", "brand story", "industry education"],
+  "lead_goal": ["direct consumer sales", "distributor partnerships", "KOL collaboration"],
+  "brand_tone": "premium, lifelike, intimate wellness",
+  "compliance_notes": "Adult product advertising restrictions on TikTok and Instagram. Must follow platform adult content policies.",
+  "open_questions": [
+    "Exact SKU list and pricing",
+    "Packaging and branding assets ready?",
+    "Budget tier for services?"
+  ],
+  "next_step": "Generate platform accounts, account personas, content roles, service keywords, lead keywords, and initial content assets.",
+  "created_at": "2026-05-09T23:53:10.000Z"
+}

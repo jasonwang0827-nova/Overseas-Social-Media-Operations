@@ -1,0 +1,26 @@
+{
+  "client_id": "client_brand_001",
+  "client_name": "Zevaro",
+  "industry": "brand_global",
+  "business_type": "premium_adult_products_d2c",
+  "region": "Canada, US",
+  "language": ["en"],
+  "target_audience": [
+    "Adult product consumers in North America",
+    "Distributors and retailers",
+    "KOLs and influencers in adult wellness"
+  ],
+  "service_keywords": [
+    "torso",
+    "silicone doll",
+    "premium adult toys",
+    "intimate wellness"
+  ],
+  "brand_tone": "premium, lifelike, intimate wellness",
+  "lead_goal": [
+    "direct consumer sales",
+    "distributor partnerships",
+    "KOL collaboration"
+  ],
+  "status": "active"
+}

@@ -5,6 +5,8 @@ import { categories, getCategory } from "../../packages/core/category.js";
 import type {
   Client,
   ContentAsset,
+  AccountRole,
+  ContentFocus,
   Lead,
   Platform,
   PlatformAccount,
@@ -36,7 +38,14 @@ type Args = Record<string, string | boolean>;
 const command = process.argv[2];
 const args = parseArgs(process.argv.slice(3));
 
-const publishers: Record<Exclude<Platform, "youtube">, Publisher> = {
+type PublishablePlatform = "facebook" | "instagram" | "tiktok" | "x";
+
+const supportedPlatforms: Platform[] = ["instagram", "tiktok", "facebook", "x", "linkedin", "youtube"];
+const publishablePlatforms: PublishablePlatform[] = ["facebook", "instagram", "tiktok", "x"];
+const accountRoles: AccountRole[] = ["official_brand", "founder_voice", "expert_advisor", "case_study", "education_content", "community_account", "sales_conversion", "local_market"];
+const contentFocuses: ContentFocus[] = ["brand_awareness", "lead_generation", "trust_building", "product_education", "case_study", "community_engagement", "sales_conversion", "customer_support"];
+
+const publishers: Record<PublishablePlatform, Publisher> = {
   facebook: facebookPublisher,
   instagram: instagramPublisher,
   tiktok: tiktokPublisher,
@@ -49,6 +58,16 @@ async function main(): Promise<void> {
       return createClient();
     case "account:add":
       return addAccount();
+    case "account:list":
+      return listAccounts();
+    case "account:update":
+      return updateAccount();
+    case "account:disable":
+      return setAccountPosting(false);
+    case "account:enable":
+      return setAccountPosting(true);
+    case "account:status":
+      return accountStatus();
     case "content:add":
       return addContent();
     case "content:variant":
@@ -118,6 +137,75 @@ function csv(value: string): string[] {
   return value.split(",").map((item) => item.trim()).filter(Boolean);
 }
 
+function nullableArg(name: string): string | null {
+  const value = args[name];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function boolArg(name: string, fallback: boolean): boolean {
+  const value = args[name];
+  if (typeof value !== "string") return fallback;
+  return ["1", "true", "yes", "on", "enabled"].includes(value.toLowerCase());
+}
+
+function enumArg<T extends string>(name: string, fallback: T, allowed: readonly T[]): T {
+  const value = arg(name, fallback);
+  if (!allowed.includes(value as T)) {
+    throw new Error(`Invalid --${name}: ${value}. Allowed: ${allowed.join(", ")}`);
+  }
+  return value as T;
+}
+
+function assertValidPlatform(platform: Platform): void {
+  if (!supportedPlatforms.includes(platform)) {
+    throw new Error(`Invalid platform: ${platform}. Allowed: ${supportedPlatforms.join(", ")}`);
+  }
+}
+
+function isPublishablePlatform(platform: Platform): platform is PublishablePlatform {
+  return publishablePlatforms.includes(platform as PublishablePlatform);
+}
+
+function findAccount(accounts: PlatformAccount[], accountId: string): PlatformAccount {
+  const account = accounts.find((item) => item.account_id === accountId);
+  if (!account) {
+    throw new Error(`Account ${accountId} was not found.`);
+  }
+  return account;
+}
+
+function applyAccountUpdates(account: PlatformAccount): void {
+  for (const field of ["account_name", "display_name", "language", "region", "notes"] as const) {
+    const value = args[field];
+    if (typeof value === "string") account[field] = value;
+  }
+  if (typeof args.account_url === "string") account.account_url = args.account_url || null;
+  if (typeof args.platform === "string") {
+    const platform = args.platform as Platform;
+    assertValidPlatform(platform);
+    account.platform = platform;
+  }
+  if (typeof args.account_role === "string") account.account_role = enumArg("account_role", account.account_role, accountRoles);
+  if (typeof args.content_focus === "string") account.content_focus = enumArg("content_focus", account.content_focus, contentFocuses);
+  if (typeof args.posting_enabled === "string") account.posting_enabled = boolArg("posting_enabled", account.posting_enabled);
+  if (typeof args.lead_tracking_enabled === "string") account.lead_tracking_enabled = boolArg("lead_tracking_enabled", account.lead_tracking_enabled);
+  if (typeof args.auth_status === "string") account.auth_status = args.auth_status as PlatformAccount["auth_status"];
+  if (typeof args.status === "string") account.status = args.status as PlatformAccount["status"];
+  account.updated_at = new Date().toISOString();
+}
+
+function assertAccountCanPublish(account: PlatformAccount | undefined, accountId: string): void {
+  if (!account) {
+    throw new Error(`Account ${accountId} was not found.`);
+  }
+  if (account.status !== "active") {
+    throw new Error(`Account ${accountId} is not active.`);
+  }
+  if (!account.posting_enabled) {
+    throw new Error(`Account ${accountId} has posting disabled.`);
+  }
+}
+
 async function readClient(clientId: string): Promise<Client> {
   return readJson<Client>(clientFile(clientId, "client.json"), null as unknown as Client);
 }
@@ -159,29 +247,82 @@ async function addAccount(): Promise<void> {
   const clientId = arg("client_id");
   await readClient(clientId);
   const platform = arg("platform", "instagram") as Platform;
-  if (platform === "youtube") {
-    throw new Error("YouTube is reserved for Phase 2 and cannot be added in the MVP.");
-  }
+  assertValidPlatform(platform);
   const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const accountId = arg("account_id", `${platform}_${id("account")}`);
+  if (accounts.some((account) => account.account_id === accountId)) {
+    throw new Error(`Account ${accountId} already exists under ${clientId}.`);
+  }
+  const now = new Date().toISOString();
   const account: PlatformAccount = {
-    account_id: arg("account_id", `${platform}_${id("account")}`),
+    account_id: accountId,
     client_id: clientId,
     platform,
     account_name: arg("account_name", `${clientId}_${platform}`),
-    account_type: platform === "facebook" ? "page" : "business",
-    persona: arg("persona", "study_consultant"),
+    display_name: arg("display_name", arg("account_name", `${clientId}_${platform}`)),
+    account_url: nullableArg("account_url"),
     language: arg("language", "zh"),
     region: arg("region", "Canada"),
-    content_role: arg("content_role", "case_explainer"),
-    platform_account_url: arg("platform_account_url", ""),
-    status: "active",
+    account_role: enumArg("account_role", "official_brand", accountRoles),
+    content_focus: enumArg("content_focus", "brand_awareness", contentFocuses),
+    posting_enabled: boolArg("posting_enabled", true),
+    lead_tracking_enabled: boolArg("lead_tracking_enabled", true),
     auth_status: "mock",
-    posting_enabled: true
+    status: "active",
+    notes: arg("notes", ""),
+    created_at: now,
+    updated_at: now
   };
 
   accounts.push(account);
   await writeClientArray(clientId, "accounts.json", accounts);
   console.log(`Added ${platform} account ${account.account_id} to ${clientId}`);
+}
+
+async function listAccounts(): Promise<void> {
+  const clientId = arg("client_id");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  console.log(JSON.stringify(accounts, null, 2));
+}
+
+async function updateAccount(): Promise<void> {
+  const clientId = arg("client_id");
+  const accountId = arg("account_id");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const account = findAccount(accounts, accountId);
+  applyAccountUpdates(account);
+  await writeClientArray(clientId, "accounts.json", accounts);
+  console.log(`Updated account ${accountId}`);
+}
+
+async function setAccountPosting(enabled: boolean): Promise<void> {
+  const clientId = arg("client_id");
+  const accountId = arg("account_id");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const account = findAccount(accounts, accountId);
+  account.posting_enabled = enabled;
+  account.updated_at = new Date().toISOString();
+  await writeClientArray(clientId, "accounts.json", accounts);
+  console.log(`${enabled ? "Enabled" : "Disabled"} posting for ${accountId}`);
+}
+
+async function accountStatus(): Promise<void> {
+  const clientId = arg("client_id");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const queue = await readClientArray<PublishTask>(clientId, "publish-queue.json");
+  const leads = await readClientArray<Lead>(clientId, "leads.json");
+  const summary = accounts.map((account) => ({
+    account_id: account.account_id,
+    platform: account.platform,
+    account_name: account.account_name,
+    posting_enabled: account.posting_enabled,
+    lead_tracking_enabled: account.lead_tracking_enabled,
+    auth_status: account.auth_status,
+    status: account.status,
+    publish_tasks: queue.filter((task) => task.account_id === account.account_id).length,
+    leads: account.lead_tracking_enabled ? leads.filter((lead) => lead.account_id === account.account_id).length : 0
+  }));
+  console.log(JSON.stringify(summary, null, 2));
 }
 
 async function addContent(): Promise<void> {
@@ -219,9 +360,7 @@ async function createVariant(): Promise<void> {
   const clientId = arg("client_id");
   const contentId = arg("content_id");
   const platform = arg("platform", "instagram") as Platform;
-  if (platform === "youtube") {
-    throw new Error("YouTube variants are reserved for Phase 2.");
-  }
+  assertValidPlatform(platform);
   const accountId = arg("account_id");
   const contents = await readClientArray<ContentAsset>(clientId, "content-pool.json");
   const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
@@ -288,11 +427,17 @@ async function schedulePublish(): Promise<void> {
   const variantId = arg("variant_id");
   const variants = await readClientArray<PlatformVariant>(clientId, "platform-variants.json");
   const contents = await readClientArray<ContentAsset>(clientId, "content-pool.json");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
   const queue = await readClientArray<PublishTask>(clientId, "publish-queue.json");
   const variant = variants.find((item) => item.variant_id === variantId);
   if (!variant) {
     throw new Error(`Variant ${variantId} was not found under ${clientId}`);
   }
+  if (!isPublishablePlatform(variant.platform)) {
+    throw new Error(`${variant.platform} is reserved and cannot be scheduled in Phase 1.`);
+  }
+  const account = accounts.find((item) => item.account_id === variant.account_id);
+  assertAccountCanPublish(account, variant.account_id);
   const content = contents.find((item) => item.content_id === variant.content_id);
   if (!content) {
     throw new Error(`Content ${variant.content_id} was not found under ${clientId}`);
@@ -349,9 +494,9 @@ async function runPublishQueue(): Promise<void> {
       task.error_message = error instanceof Error ? error.message : "approval_status must be approved before publishing";
       continue;
     }
-    if (task.platform === "youtube") {
+    if (!isPublishablePlatform(task.platform)) {
       task.status = "failed";
-      task.error_message = "YouTube is reserved for Phase 2";
+      task.error_message = `${task.platform} is reserved and cannot publish in Phase 1`;
       continue;
     }
     const variant = variants.find((item) => item.variant_id === task.variant_id);
@@ -366,6 +511,16 @@ async function runPublishQueue(): Promise<void> {
     } catch (error) {
       task.status = "failed";
       task.error_message = error instanceof Error ? error.message : "variant must be approved before publishing";
+      task.last_error = task.error_message;
+      continue;
+    }
+    const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+    const account = accounts.find((item) => item.account_id === task.account_id);
+    try {
+      assertAccountCanPublish(account, task.account_id);
+    } catch (error) {
+      task.status = "failed";
+      task.error_message = error instanceof Error ? error.message : "account cannot publish";
       task.last_error = task.error_message;
       continue;
     }
@@ -483,20 +638,26 @@ async function generateDailyReport(): Promise<void> {
   const records = await readClientArray<PublishRecord>(clientId, "publish-records.json");
   const leads = await readClientArray<Lead>(clientId, "leads.json");
   const contents = await readClientArray<ContentAsset>(clientId, "content-pool.json");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const activeAccountIds = new Set(accounts.filter((account) => account.status === "active").map((account) => account.account_id));
+  const leadTrackingAccountIds = new Set(accounts.filter((account) => account.status === "active" && account.lead_tracking_enabled).map((account) => account.account_id));
+  const reportQueue = queue.filter((task) => activeAccountIds.has(task.account_id));
+  const reportRecords = records.filter((record) => activeAccountIds.has(record.account_id));
+  const reportLeads = leads.filter((lead) => leadTrackingAccountIds.has(lead.account_id));
   const report = {
     client_id: clientId,
     date,
-    publish_count: records.filter((record) => record.published_at?.startsWith(date)).length,
-    platform_status: queue.reduce<Record<string, Record<string, number>>>((acc, task) => {
+    publish_count: reportRecords.filter((record) => record.published_at?.startsWith(date)).length,
+    platform_status: reportQueue.reduce<Record<string, Record<string, number>>>((acc, task) => {
       acc[task.platform] ??= {};
       acc[task.platform][task.status] = (acc[task.platform][task.status] ?? 0) + 1;
       return acc;
     }, {}),
-    failed_tasks: queue.filter((task) => task.status === "failed"),
-    interaction_count: leads.filter((lead) => lead.created_at.startsWith(date)).length,
-    new_leads: leads.filter((lead) => lead.created_at.startsWith(date) && lead.lead_stage === "new").length,
-    high_score_leads: leads.filter((lead) => lead.lead_score >= 70),
-    human_follow_up_required: leads.filter((lead) => lead.human_review_required && lead.lead_stage !== "spam"),
+    failed_tasks: reportQueue.filter((task) => task.status === "failed"),
+    interaction_count: reportLeads.filter((lead) => lead.created_at.startsWith(date)).length,
+    new_leads: reportLeads.filter((lead) => lead.created_at.startsWith(date) && lead.lead_stage === "new").length,
+    high_score_leads: reportLeads.filter((lead) => lead.lead_score >= 70),
+    human_follow_up_required: reportLeads.filter((lead) => lead.human_review_required && lead.lead_stage !== "spam"),
     top_content_themes: summarizeThemes(contents)
   };
   const reportPath = join(clientDir(clientId), "reports", "daily", `${date}.json`);
@@ -512,21 +673,27 @@ async function generateWeeklyReport(): Promise<void> {
   const records = await readClientArray<PublishRecord>(clientId, "publish-records.json");
   const leads = await readClientArray<Lead>(clientId, "leads.json");
   const contents = await readClientArray<ContentAsset>(clientId, "content-pool.json");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const activeAccountIds = new Set(accounts.filter((account) => account.status === "active").map((account) => account.account_id));
+  const leadTrackingAccountIds = new Set(accounts.filter((account) => account.status === "active" && account.lead_tracking_enabled).map((account) => account.account_id));
+  const reportQueue = queue.filter((task) => activeAccountIds.has(task.account_id));
+  const reportRecords = records.filter((record) => activeAccountIds.has(record.account_id));
+  const reportLeads = leads.filter((lead) => leadTrackingAccountIds.has(lead.account_id));
   const inRange = (value: string | null): boolean => Boolean(value && value >= `${weekStart}T00:00:00` && value <= `${weekEnd}T23:59:59`);
-  const weeklyLeads = leads.filter((lead) => inRange(lead.created_at));
-  const weeklyRecords = records.filter((record) => inRange(record.published_at));
+  const weeklyLeads = reportLeads.filter((lead) => inRange(lead.created_at));
+  const weeklyRecords = reportRecords.filter((record) => inRange(record.published_at));
   const report = {
     client_id: clientId,
     week_start: weekStart,
     week_end: weekEnd,
     published_count: weeklyRecords.length,
-    platform_publish_status: queue.reduce<Record<string, Record<string, number>>>((acc, task) => {
+    platform_publish_status: reportQueue.reduce<Record<string, Record<string, number>>>((acc, task) => {
       acc[task.platform] ??= {};
       acc[task.platform][task.status] = (acc[task.platform][task.status] ?? 0) + 1;
       return acc;
     }, {}),
-    failed_tasks: queue.filter((task) => task.status === "failed"),
-    retry_pending_tasks: queue.filter((task) => task.next_retry_at),
+    failed_tasks: reportQueue.filter((task) => task.status === "failed"),
+    retry_pending_tasks: reportQueue.filter((task) => task.next_retry_at),
     new_leads: weeklyLeads.length,
     high_value_leads: weeklyLeads.filter((lead) => lead.lead_score >= 70),
     follow_up_required: weeklyLeads.filter((lead) => lead.human_review_required && lead.lead_stage !== "spam"),
@@ -651,6 +818,7 @@ function defaultFormat(platform: Platform): string {
     tiktok: "short_video",
     facebook: "page_post",
     x: "post",
+    linkedin: "company_post",
     youtube: "short"
   };
   return formats[platform];

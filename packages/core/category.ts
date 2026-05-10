@@ -25,7 +25,7 @@ export const categories: ClientCategory[] = [
     content_angles: ["获客", "广告投放", "社媒运营", "案例拆解", "本地化", "渠道增长"],
     lead_keywords: ["代运营", "广告投放", "获客", "品牌推广", "怎么收费", "可以咨询吗", "想了解"],
     negative_keywords: ["广告", "不需要", "骗子", "无聊", "别推给我"],
-    recommended_platforms: ["x", "instagram", "tiktok"],
+    recommended_platforms: ["linkedin", "x", "instagram", "tiktok"],
     default_funnel_stages: ["awareness", "trust_building", "lead_generation", "conversion"]
   },
   {

@@ -56,6 +56,7 @@ function render() {
   const views = {
     overview: renderOverview,
     clients: renderClients,
+    accounts: renderAccounts,
     content: renderContent,
     publish: renderPublish,
     leads: renderLeads,
@@ -90,7 +91,7 @@ function renderOverview() {
 }
 
 function renderClients() {
-  const { client, accounts, categories } = state.data;
+  const { client, categories } = state.data;
   return `
     <section class="panel">
       <h2>创建客户</h2>
@@ -162,21 +163,114 @@ function renderClients() {
         </tbody>
       </table>
     </section>
-    <h2 style="margin-top:24px">平台账号</h2>
-    <div class="account-grid">
-      ${accounts.map((account) => `
-        <article class="row-card">
-          <h3>${escapeHtml(account.platform)}</h3>
-          <p>${escapeHtml(account.account_name)}</p>
-          <p class="muted">${escapeHtml(account.persona)} · ${escapeHtml(account.content_role)}</p>
-          <div class="tag-row">
-            ${status(account.status)}
-            ${status(account.auth_status)}
-            ${tag(account.language)}
-          </div>
-        </article>
-      `).join("")}
-    </div>
+  `;
+}
+
+function renderAccounts() {
+  const { accounts, platform_options, account_role_options, content_focus_options, account_stats } = state.data;
+  return `
+    <section class="panel">
+      <h2>新增 / 编辑平台账号</h2>
+      <form class="client-form" id="accountForm">
+        <input type="hidden" name="account_id" />
+        <label>
+          <span>平台</span>
+          <select name="platform">${platform_options.map((platform) => `<option value="${escapeHtml(platform)}">${escapeHtml(platform)}</option>`).join("")}</select>
+        </label>
+        <label>
+          <span>账号名</span>
+          <input name="account_name" placeholder="brand_instagram" required />
+        </label>
+        <label>
+          <span>显示名称</span>
+          <input name="display_name" placeholder="Brand Official" />
+        </label>
+        <label class="wide">
+          <span>账号链接</span>
+          <input name="account_url" placeholder="https://instagram.com/brand" />
+        </label>
+        <label>
+          <span>语言</span>
+          <input name="language" value="en" />
+        </label>
+        <label>
+          <span>地区</span>
+          <input name="region" value="Canada" />
+        </label>
+        <label>
+          <span>账号角色</span>
+          <select name="account_role">${account_role_options.map((role) => `<option value="${escapeHtml(role)}">${escapeHtml(role)}</option>`).join("")}</select>
+        </label>
+        <label>
+          <span>内容重点</span>
+          <select name="content_focus">${content_focus_options.map((focus) => `<option value="${escapeHtml(focus)}">${escapeHtml(focus)}</option>`).join("")}</select>
+        </label>
+        <label>
+          <span>授权状态</span>
+          <select name="auth_status">
+            ${["mock", "connected", "disconnected", "expired", "error"].map((item) => `<option value="${item}">${item}</option>`).join("")}
+          </select>
+        </label>
+        <label>
+          <span>账号状态</span>
+          <select name="status">
+            ${["active", "inactive", "archived"].map((item) => `<option value="${item}">${item}</option>`).join("")}
+          </select>
+        </label>
+        <label class="check-label">
+          <input name="posting_enabled" type="checkbox" checked />
+          <span>允许发布</span>
+        </label>
+        <label class="check-label">
+          <input name="lead_tracking_enabled" type="checkbox" checked />
+          <span>追踪线索</span>
+        </label>
+        <label class="wide">
+          <span>备注</span>
+          <textarea name="notes" placeholder="账号用途、授权说明、禁用事项等"></textarea>
+        </label>
+        <div class="form-actions">
+          <button class="action-button" type="submit">保存账号</button>
+          <button class="action-button secondary" type="button" data-action="resetAccountForm">清空表单</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel" style="margin-top:24px">
+      <h2>账号列表</h2>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>平台</th><th>账号</th><th>角色</th><th>内容重点</th><th>语言/地区</th><th>授权</th><th>状态</th><th>发布/线索</th><th>统计</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${accounts.map((account) => {
+            const stats = account_stats[account.account_id] || { queued: 0, published: 0, leads: 0 };
+            return `
+              <tr>
+                <td>${escapeHtml(account.platform)}</td>
+                <td><strong>${escapeHtml(account.account_name)}</strong><br><span class="muted">${escapeHtml(account.display_name || "")}</span></td>
+                <td>${tag(account.account_role)}</td>
+                <td>${tag(account.content_focus)}</td>
+                <td>${escapeHtml(account.language)} / ${escapeHtml(account.region)}</td>
+                <td>${status(account.auth_status)}</td>
+                <td>${status(account.status)}</td>
+                <td>${status(account.posting_enabled ? "posting_on" : "posting_off")} ${status(account.lead_tracking_enabled ? "leads_on" : "leads_off")}</td>
+                <td>发布 ${stats.published}<br>线索 ${stats.leads}</td>
+                <td>
+                  <div class="table-actions">
+                    <button class="action-button secondary" data-action="editAccount" data-account-id="${escapeHtml(account.account_id)}">编辑</button>
+                    <button class="action-button secondary" data-action="togglePosting" data-account-id="${escapeHtml(account.account_id)}" data-value="${String(!account.posting_enabled)}">${account.posting_enabled ? "停发布" : "开发布"}</button>
+                    <button class="action-button secondary" data-action="toggleLeadTracking" data-account-id="${escapeHtml(account.account_id)}" data-value="${String(!account.lead_tracking_enabled)}">${account.lead_tracking_enabled ? "停线索" : "开线索"}</button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join("")}
+        </tbody>
+      </table>
+    </section>
   `;
 }
 
@@ -370,6 +464,56 @@ function bindViewEvents() {
   document.querySelectorAll("[data-action='fillClientExample']").forEach((button) => {
     button.addEventListener("click", () => fillClientExample());
   });
+
+  const accountForm = document.querySelector("#accountForm");
+  if (accountForm) {
+    accountForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(accountForm);
+      const accountId = String(form.get("account_id") || "").trim();
+      const payload = {
+        client_id: state.clientId,
+        account_id: accountId || undefined,
+        platform: String(form.get("platform") || "instagram"),
+        account_name: String(form.get("account_name") || "").trim(),
+        display_name: String(form.get("display_name") || "").trim(),
+        account_url: String(form.get("account_url") || "").trim() || null,
+        language: String(form.get("language") || "en").trim(),
+        region: String(form.get("region") || "Canada").trim(),
+        account_role: String(form.get("account_role") || "official_brand"),
+        content_focus: String(form.get("content_focus") || "brand_awareness"),
+        posting_enabled: form.get("posting_enabled") === "on",
+        lead_tracking_enabled: form.get("lead_tracking_enabled") === "on",
+        auth_status: String(form.get("auth_status") || "mock"),
+        status: String(form.get("status") || "active"),
+        notes: String(form.get("notes") || "").trim()
+      };
+      await postJson(accountId ? "/api/account/update" : "/api/account/create", payload);
+    });
+  }
+
+  document.querySelectorAll("[data-action='editAccount']").forEach((button) => {
+    button.addEventListener("click", () => fillAccountForm(button.dataset.accountId));
+  });
+  document.querySelectorAll("[data-action='togglePosting']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/account/toggle", {
+      client_id: state.clientId,
+      account_id: button.dataset.accountId,
+      field: "posting_enabled",
+      value: button.dataset.value === "true"
+    }));
+  });
+  document.querySelectorAll("[data-action='toggleLeadTracking']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/account/toggle", {
+      client_id: state.clientId,
+      account_id: button.dataset.accountId,
+      field: "lead_tracking_enabled",
+      value: button.dataset.value === "true"
+    }));
+  });
+  document.querySelectorAll("[data-action='resetAccountForm']").forEach((button) => {
+    button.addEventListener("click", () => resetAccountForm());
+  });
 }
 
 function updateClientOptions(clients) {
@@ -403,6 +547,38 @@ function fillClientExample() {
 
 function splitList(value) {
   return value.split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
+}
+
+function fillAccountForm(accountId) {
+  const form = document.querySelector("#accountForm");
+  const account = state.data.accounts.find((item) => item.account_id === accountId);
+  if (!form || !account) return;
+  form.account_id.value = account.account_id;
+  form.platform.value = account.platform;
+  form.account_name.value = account.account_name;
+  form.display_name.value = account.display_name || "";
+  form.account_url.value = account.account_url || "";
+  form.language.value = account.language || "en";
+  form.region.value = account.region || "Canada";
+  form.account_role.value = account.account_role;
+  form.content_focus.value = account.content_focus;
+  form.auth_status.value = account.auth_status;
+  form.status.value = account.status;
+  form.posting_enabled.checked = Boolean(account.posting_enabled);
+  form.lead_tracking_enabled.checked = Boolean(account.lead_tracking_enabled);
+  form.notes.value = account.notes || "";
+  form.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function resetAccountForm() {
+  const form = document.querySelector("#accountForm");
+  if (!form) return;
+  form.reset();
+  form.account_id.value = "";
+  form.language.value = "en";
+  form.region.value = "Canada";
+  form.posting_enabled.checked = true;
+  form.lead_tracking_enabled.checked = true;
 }
 
 function row(label, value) {

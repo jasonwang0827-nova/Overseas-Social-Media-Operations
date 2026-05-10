@@ -288,7 +288,12 @@ input {
 
 .status.published,
 .status.qualified,
-.status.approved {
+.status.approved,
+.status.active,
+.status.connected,
+.status.mock,
+.status.posting_on,
+.status.leads_on {
   background: #dcfce7;
   color: var(--green);
 }
@@ -307,7 +312,12 @@ input {
 }
 
 .status.draft,
-.status.pending {
+.status.pending,
+.status.inactive,
+.status.disconnected,
+.status.expired,
+.status.posting_off,
+.status.leads_off {
   background: #fef3c7;
   color: var(--amber);
 }
@@ -378,6 +388,33 @@ input {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.check-label {
+  min-height: 40px;
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: center;
+  gap: 8px !important;
+  padding-top: 22px;
+}
+
+.check-label input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.table-actions .action-button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 textarea {

@@ -1,0 +1,19 @@
+{
+  "client_id": "client_brand_003",
+  "source": "openclaw_background_intake",
+  "business_summary": "Blind box, plush toy, and collectible figurine brand. Has existing automated TikTok and Instagram publishing pipeline running. Xiaohongshu SOP exists but not yet activated. Paid client already in progress.",
+  "category_id": "brand_global",
+  "target_audience": ["Blind box collectors", "plush toy enthusiasts", "pop culture gift buyers"],
+  "services": ["social media content publishing", "automated posting", "comment monitoring", "lead generation"],
+  "preferred_platforms": ["tiktok", "instagram", "facebook"],
+  "content_direction": ["unboxing videos", "product showcase", "collector community"],
+  "lead_goal": ["product inquiries", "wholesale orders", "collector community engagement"],
+  "brand_tone": "fun, cute, unboxing excitement",
+  "compliance_notes": "No major restrictions. Family-friendly content.",
+  "open_questions": [
+    "Xiaohongshu activation timeline",
+    "New product launch schedule"
+  ],
+  "next_step": "Generate platform accounts, account personas, content roles, service keywords, lead keywords, and initial content assets.",
+  "created_at": "2026-05-09T23:53:10.000Z"
+}

@@ -1,7 +1,27 @@
-export type Platform = "facebook" | "instagram" | "tiktok" | "x" | "youtube";
+export type Platform = "facebook" | "instagram" | "tiktok" | "x" | "linkedin" | "youtube";
 export type Status = "draft" | "ready_for_review" | "approved" | "scheduled" | "publishing" | "published" | "failed" | "cancelled";
 export type ApprovalStatus = "draft" | "ready_for_review" | "approved" | "rejected";
 export type LeadStage = "new" | "qualified" | "replied" | "waiting_response" | "booked" | "converted" | "not_interested" | "spam";
+export type AccountStatus = "active" | "inactive" | "archived";
+export type AuthStatus = "connected" | "mock" | "disconnected" | "expired" | "error";
+export type AccountRole =
+  | "official_brand"
+  | "founder_voice"
+  | "expert_advisor"
+  | "case_study"
+  | "education_content"
+  | "community_account"
+  | "sales_conversion"
+  | "local_market";
+export type ContentFocus =
+  | "brand_awareness"
+  | "lead_generation"
+  | "trust_building"
+  | "product_education"
+  | "case_study"
+  | "community_engagement"
+  | "sales_conversion"
+  | "customer_support";
 
 export interface Client {
   client_id: string;
@@ -32,15 +52,19 @@ export interface PlatformAccount {
   client_id: string;
   platform: Platform;
   account_name: string;
-  account_type: "business" | "creator" | "page";
-  persona: string;
+  display_name: string;
+  account_url: string | null;
   language: string;
   region: string;
-  content_role: string;
-  platform_account_url: string | null;
-  status: "active" | "paused" | "archived";
-  auth_status: "connected" | "mock" | "disconnected";
+  account_role: AccountRole;
+  content_focus: ContentFocus;
   posting_enabled: boolean;
+  lead_tracking_enabled: boolean;
+  auth_status: AuthStatus;
+  status: AccountStatus;
+  notes: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface MediaAsset {
