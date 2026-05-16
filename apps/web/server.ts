@@ -20,6 +20,7 @@ import {
   loadFacebookGraphConfig,
   loadInstagramGraphConfig,
   loadMetaEnv,
+  publishInstagramCarousel,
   publishInstagramMedia,
   readMetaFoundationConfig,
   sendFacebookPageMessage,
@@ -67,6 +68,7 @@ interface MetaLiveActionRequest {
   action:
     | "ig_account_check"
     | "ig_publish_image"
+    | "ig_publish_carousel"
     | "ig_publish_video"
     | "ig_comments_list"
     | "ig_comment_reply"
@@ -86,6 +88,7 @@ interface MetaLiveActionRequest {
   caption?: string;
   message?: string;
   image_url?: string;
+  carousel_urls?: string[];
   video_url?: string;
   media_type?: "VIDEO" | "REELS" | "STORIES";
   media_id?: string;
@@ -1540,6 +1543,14 @@ async function runMetaLiveAction(body: MetaLiveActionRequest): Promise<Record<st
       case "ig_publish_image": {
         if (!config.igUserId) throw new Error("Instagram business account id missing.");
         const published = await publishInstagramMedia({ igUserId: config.igUserId, imageUrl: required(body.image_url, "image_url"), caption: body.caption ?? "" }, config.accessToken);
+        platformPostId = published.media_id;
+        result = published;
+        break;
+      }
+      case "ig_publish_carousel": {
+        if (!config.igUserId) throw new Error("Instagram business account id missing.");
+        const imageUrls = (body.carousel_urls ?? []).map((item) => item.trim()).filter(Boolean);
+        const published = await publishInstagramCarousel({ igUserId: config.igUserId, imageUrls, caption: body.caption ?? "" }, config.accessToken);
         platformPostId = published.media_id;
         result = published;
         break;

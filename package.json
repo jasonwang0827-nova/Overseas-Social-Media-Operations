@@ -63,6 +63,7 @@
     "x:follow:run": "tsx apps/worker/cli.ts x:follow:run",
     "ig:account:check": "tsx apps/worker/cli.ts ig:account:check",
     "ig:publish:image": "tsx apps/worker/cli.ts ig:publish:image",
+    "ig:publish:carousel": "tsx apps/worker/cli.ts ig:publish:carousel",
     "ig:publish:video": "tsx apps/worker/cli.ts ig:publish:video",
     "ig:comments:list": "tsx apps/worker/cli.ts ig:comments:list",
     "ig:comment:reply": "tsx apps/worker/cli.ts ig:comment:reply",

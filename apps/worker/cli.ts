@@ -42,6 +42,7 @@ import {
   loadFacebookGraphConfig,
   loadInstagramGraphConfig,
   loadMetaEnv,
+  publishInstagramCarousel,
   publishInstagramMedia,
   readMetaFoundationConfig,
   sendFacebookPageMessage,
@@ -231,6 +232,8 @@ async function main(): Promise<void> {
       return igAccountCheck();
     case "ig:publish:image":
       return igPublishImage();
+    case "ig:publish:carousel":
+      return igPublishCarousel();
     case "ig:publish:video":
       return igPublishVideo();
     case "ig:comments:list":
@@ -2762,6 +2765,28 @@ async function igPublishImage(): Promise<void> {
   console.log(JSON.stringify(result, null, 2));
 }
 
+async function igPublishCarousel(): Promise<void> {
+  assertLiveConfirm("Live Instagram carousel publish requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findInstagramAccount(clientId, nullableArg("account_id"));
+  const config = await loadInstagramGraphConfig(account);
+  const igUserId = arg("ig_user_id", config.igUserId ?? "");
+  if (!igUserId) throw new Error("Instagram business account id missing. Set META_IG_USER_ID or account.meta_binding.instagram_business_account_id.");
+  const imageUrls = csv(arg("image_urls"));
+  const result = await publishInstagramCarousel({
+    igUserId,
+    imageUrls,
+    caption: arg("caption", "")
+  }, config.accessToken);
+  await appendPublishAudit(clientId, makeInstagramAutomationAudit("automation_success", account, "ig_publish_carousel", `Instagram carousel published: ${result.media_id}`, {
+    media_id: result.media_id,
+    creation_id: result.creation_id,
+    children: result.children,
+    image_count: imageUrls.length
+  }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
 async function igPublishVideo(): Promise<void> {
   assertLiveConfirm("Live Instagram video publish requires --confirm LIVE.");
   const clientId = arg("client_id");
@@ -4162,6 +4187,7 @@ function printHelp(): void {
   npm run meta:publish:dry-run -- --client_id client_demo_001 --variant_id variant_brand_intro_facebook_demo_001
   npm run ig:account:check -- --client_id client_demo_001 --account_id ig_demo_001
   npm run ig:publish:image -- --client_id client_demo_001 --account_id ig_demo_001 --image_url https://example.com/image.jpg --caption "test" --confirm LIVE
+  npm run ig:publish:carousel -- --client_id client_demo_001 --account_id ig_demo_001 --image_urls https://example.com/1.jpg,https://example.com/2.jpg --caption "test" --confirm LIVE
   npm run ig:comments:list -- --client_id client_demo_001 --account_id ig_demo_001 --media_id <ig_media_id>
   npm run ig:comment:reply -- --client_id client_demo_001 --account_id ig_demo_001 --comment_id <comment_id> --message "Thanks" --confirm LIVE
   npm run ig:private-reply -- --client_id client_demo_001 --account_id ig_demo_001 --comment_id <comment_id> --message "Sent you details" --confirm LIVE

@@ -1370,6 +1370,7 @@ function renderMetaCliLiveTestSection(facebookAccounts, instagramAccounts) {
         ${renderMetaLiveForm("Instagram", igId, [
           ["ig_account_check", "检查账号", "read"],
           ["ig_publish_image", "发布图片", "image"],
+          ["ig_publish_carousel", "发布多图", "carousel"],
           ["ig_publish_video", "发布 Reels/视频", "video"],
           ["ig_comments_list", "查看评论", "comments"],
           ["ig_comment_reply", "回复评论", "comment_reply"],
@@ -1406,10 +1407,11 @@ function renderMetaLiveForm(title, accountId, actions) {
       <label><span>Caption / Message</span><textarea name="message" rows="3" placeholder="Caption, post text, comment reply, DM text"></textarea></label>
       <label>
         <span>Upload Local Media To R2</span>
-        <input name="media_file" type="file" accept="image/*,video/*" />
+        <input name="media_file" type="file" accept="image/*,video/*" multiple />
       </label>
       <button class="action-button secondary" type="button" data-action="uploadR2Media">上传到 R2 并回填 URL</button>
       <label><span>Public Image URL</span><input name="image_url" placeholder="https://..." /></label>
+      <label><span>Carousel Image URLs</span><textarea name="carousel_urls" rows="3" placeholder="多图发布：每行一个公开图片 URL，2-10 张"></textarea></label>
       <label><span>Public Video URL</span><input name="video_url" placeholder="https://...mp4" /></label>
       <div class="two-column-form">
         <label><span>Media ID</span><input name="media_id" placeholder="IG media id" /></label>
@@ -2079,11 +2081,30 @@ function bindViewEvents() {
   document.querySelectorAll(".meta-live-form").forEach((form) => {
     form.querySelector("[data-action='uploadR2Media']")?.addEventListener("click", async () => {
       const fileInput = form.querySelector("input[name='media_file']");
-      const file = fileInput?.files?.[0];
-      if (!file) {
+      const files = Array.from(fileInput?.files || []);
+      if (!files.length) {
         alert("请选择一个本地图片或视频文件。");
         return;
       }
+      const action = String(new FormData(form).get("action") || "");
+      if (action === "ig_publish_carousel") {
+        if (files.length < 2 || files.length > 10) {
+          alert("IG 多图发布请选择 2-10 张图片。");
+          return;
+        }
+        const invalid = files.find((file) => !file.type.startsWith("image/"));
+        if (invalid) {
+          alert("IG 多图发布只支持图片文件。");
+          return;
+        }
+        const uploads = [];
+        for (const file of files) uploads.push(await uploadMediaToR2(form, file));
+        const target = form.querySelector("textarea[name='carousel_urls']");
+        if (target) target.value = uploads.map((upload) => upload.url).join("\n");
+        alert(`多图上传完成：${uploads.length} 张`);
+        return;
+      }
+      const file = files[0];
       const upload = await uploadMediaToR2(form, file);
       const target = file.type.startsWith("video/") ? form.querySelector("input[name='video_url']") : form.querySelector("input[name='image_url']");
       if (target) target.value = upload.url;
@@ -2108,6 +2129,7 @@ function bindViewEvents() {
         caption: String(data.get("message") || ""),
         message: String(data.get("message") || ""),
         image_url: String(data.get("image_url") || ""),
+        carousel_urls: splitLines(String(data.get("carousel_urls") || "")),
         video_url: String(data.get("video_url") || ""),
         media_id: String(data.get("media_id") || ""),
         object_id: String(data.get("object_id") || ""),

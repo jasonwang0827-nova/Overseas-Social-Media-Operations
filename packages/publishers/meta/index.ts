@@ -14,6 +14,7 @@ export {
   instagramGraphGet,
   instagramGraphPost,
   loadInstagramGraphConfig,
+  publishInstagramCarousel,
   publishInstagramMedia,
   sendInstagramDm
 } from "./instagramApi.js";

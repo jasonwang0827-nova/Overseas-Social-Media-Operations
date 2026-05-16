@@ -52,7 +52,7 @@ Required input from Jason:
 ```text
 local_media_path
 caption
-publish_type: image or reels
+publish_type: image, carousel, or reels
 explicit approval to publish LIVE
 ```
 
@@ -169,6 +169,12 @@ R2_URL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/social
 echo "$R2_URL"
 ```
 
+For carousel/multi-image posts, repeat the upload once for each image file and collect 2-10 public image URLs. Store them as a comma-separated list:
+
+```bash
+CAROUSEL_URLS="https://.../image-1.jpg,https://.../image-2.jpg"
+```
+
 ## 5. Verify The R2 URL
 
 Run:
@@ -215,12 +221,25 @@ npm run ig:publish:video -- \
   | tee /tmp/social-ops-ig-publish.json
 ```
 
+For carousel/multi-image:
+
+```bash
+npm run ig:publish:carousel -- \
+  --client_id client_brand_001 \
+  --account_id ig_brand_001 \
+  --image_urls "$CAROUSEL_URLS" \
+  --caption "<CAPTION>" \
+  --confirm LIVE \
+  | tee /tmp/social-ops-ig-publish.json
+```
+
 Expected success:
 
 ```json
 {
   "creation_id": "...",
   "media_id": "...",
+  "children": ["...", "..."],
   "raw": {
     "id": "..."
   }
@@ -402,4 +421,3 @@ Use a different approved test asset if Jason wants another test.
 - Do not use adult/sensitive filtering in local analysis; publish only the exact test media Jason selects.
 - Do not use Instagram follow/unfollow automation. Official Instagram Graph API does not expose it.
 - Do not operate Web UI unless Jason explicitly asks for UI testing.
-

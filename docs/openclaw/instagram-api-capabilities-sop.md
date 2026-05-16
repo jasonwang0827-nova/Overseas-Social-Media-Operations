@@ -129,7 +129,38 @@ Creator/KOL announcement posts
 Campaign posts with approved captions
 ```
 
-### 5. Video / Reels Publish
+### 5. Carousel / Multi-Image Publish
+
+Command:
+
+```bash
+npm run ig:publish:carousel -- \
+  --client_id client_brand_001 \
+  --account_id ig_brand_001 \
+  --image_urls "<PUBLIC_IMAGE_URL_1>,<PUBLIC_IMAGE_URL_2>" \
+  --caption "<CAPTION>" \
+  --confirm LIVE
+```
+
+Graph API flow:
+
+```text
+POST /{ig_user_id}/media with is_carousel_item=true for each image
+POST /{ig_user_id}/media with media_type=CAROUSEL and children
+POST /{ig_user_id}/media_publish
+```
+
+Business use:
+
+```text
+Product carousels
+Before/after sets
+Multi-angle product posts
+Education posts split across slides
+Campaign posts with 2-10 approved images
+```
+
+### 6. Video / Reels Publish
 
 Command:
 
@@ -165,7 +196,7 @@ Important:
 Meta may reject media during content review. Do not bypass platform review.
 ```
 
-### 6. Comment List
+### 7. Comment List
 
 Command:
 
@@ -197,7 +228,7 @@ Identify high-intent comments
 Build reply drafts
 ```
 
-### 7. Public Comment Reply
+### 8. Public Comment Reply
 
 Command:
 
@@ -495,4 +526,3 @@ Maintain asset history for reporting
 - Do not operate on an account other than `ig_brand_001` unless Jason explicitly says so.
 - Do not publish without explicit LIVE confirmation.
 - Preserve adult-products business context, but do not attempt to bypass Meta content enforcement.
-

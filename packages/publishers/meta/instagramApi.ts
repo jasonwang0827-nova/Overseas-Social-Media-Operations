@@ -19,6 +19,12 @@ export interface InstagramPublishInput {
   mediaType?: "IMAGE" | "VIDEO" | "REELS" | "STORIES";
 }
 
+export interface InstagramCarouselPublishInput {
+  igUserId: string;
+  caption?: string;
+  imageUrls: string[];
+}
+
 export async function loadInstagramGraphConfig(account?: PlatformAccount): Promise<InstagramGraphConfig> {
   const env = await loadMetaEnv();
   const vault = await readMetaToken(account?.meta_binding?.token_ref);
@@ -73,6 +79,37 @@ export async function publishInstagramMedia(input: InstagramPublishInput, token?
   const mediaId = typeof published.id === "string" ? published.id : null;
   if (!mediaId) throw new Error(`Instagram media_publish did not return id: ${JSON.stringify(published)}`);
   return { creation_id: creationId, media_id: mediaId, raw: published };
+}
+
+export async function publishInstagramCarousel(input: InstagramCarouselPublishInput, token?: string): Promise<{ creation_id: string; media_id: string; children: string[]; raw: Record<string, unknown> }> {
+  const imageUrls = input.imageUrls.map((item) => item.trim()).filter(Boolean);
+  if (imageUrls.length < 2 || imageUrls.length > 10) {
+    throw new Error(`Instagram carousel requires 2 to 10 image URLs. Received ${imageUrls.length}.`);
+  }
+
+  const children: string[] = [];
+  for (const imageUrl of imageUrls) {
+    const child = await instagramGraphPost(`/${input.igUserId}/media`, {
+      image_url: imageUrl,
+      is_carousel_item: true
+    }, token);
+    const childId = typeof child.id === "string" ? child.id : null;
+    if (!childId) throw new Error(`Instagram carousel item creation did not return id: ${JSON.stringify(child)}`);
+    children.push(childId);
+  }
+
+  const created = await instagramGraphPost(`/${input.igUserId}/media`, {
+    media_type: "CAROUSEL",
+    children: children.join(","),
+    caption: input.caption
+  }, token);
+  const creationId = typeof created.id === "string" ? created.id : null;
+  if (!creationId) throw new Error(`Instagram carousel container creation did not return id: ${JSON.stringify(created)}`);
+
+  const published = await instagramGraphPost(`/${input.igUserId}/media_publish`, { creation_id: creationId }, token);
+  const mediaId = typeof published.id === "string" ? published.id : null;
+  if (!mediaId) throw new Error(`Instagram carousel media_publish did not return id: ${JSON.stringify(published)}`);
+  return { creation_id: creationId, media_id: mediaId, children, raw: published };
 }
 
 export async function sendInstagramDm(pageId: string, recipientId: string, message: string, token?: string): Promise<Record<string, unknown>> {
