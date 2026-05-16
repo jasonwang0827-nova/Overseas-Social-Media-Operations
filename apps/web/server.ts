@@ -1,16 +1,34 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { access, readdir, readFile } from "node:fs/promises";
-import { extname, join, normalize } from "node:path";
-import type { AccountRole, Client, ContentAngle, ContentAsset, ContentFocus, ContentTheme, Lead, Platform, PlatformAccount, PlatformCapabilities, PlatformVariant, PublishRecord, PublishTask, ReplyDraft, XEngagementItem, XKolProspect, XLeadCandidate, XQueryHistoryEntry, XResearchPost } from "../../packages/core/types.js";
+import { createHash, createHmac, randomBytes } from "node:crypto";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, extname, join, normalize } from "node:path";
+import type { AccountRole, Client, ContentAngle, ContentAsset, ContentFocus, ContentTheme, Lead, Platform, PlatformAccount, PlatformCapabilities, PlatformVariant, PublishAuditEntry, PublishRecord, PublishTask, ReplyDraft, XEngagementItem, XKolProspect, XLeadCandidate, XQueryHistoryEntry, XResearchPost } from "../../packages/core/types.js";
 import { assertContentApproved, assertVariantApproved } from "../../packages/core/approval.js";
 import { categories, getCategory } from "../../packages/core/category.js";
 import { classifyIntent } from "../../packages/lead-intelligence/classifyIntent.js";
 import { generateReplyDraft } from "../../packages/lead-intelligence/generateReplyDraft.js";
 import { scoreLead, type LeadScoringRule } from "../../packages/lead-intelligence/scoreLead.js";
+import {
+  buildMetaDryRunPreview,
+  checkMetaAccount,
+  facebookGraphGet,
+  facebookGraphPost,
+  instagramGraphGet,
+  instagramGraphPost,
+  loadFacebookGraphConfig,
+  loadInstagramGraphConfig,
+  loadMetaEnv,
+  publishInstagramMedia,
+  readMetaFoundationConfig,
+  sendFacebookPageMessage,
+  sendInstagramDm
+} from "../../packages/publishers/meta/index.js";
 import { createMockPublisher } from "../../packages/publishers/mockPublisher.js";
+import { checkXAccountAuth } from "../../packages/publishers/x/accountAuth.js";
 import { xPublisher } from "../../packages/publishers/x/index.js";
+import { buildXOAuthAuthorizeUrl, completeXOAuthCallback } from "../../packages/publishers/x/oauth.js";
 import { clientDir, clientFile, dataRoot, ensureClientDirectories, readClientArray, readJson, writeClientArray, writeJson } from "../../packages/storage/jsonStore.js";
 
 const port = Number(process.env.PORT ?? 4321);
@@ -43,14 +61,62 @@ interface XApiUsageEntry {
   cost_units: number;
   cache_hit: boolean;
 }
+interface MetaLiveActionRequest {
+  client_id: string;
+  account_id: string;
+  action:
+    | "ig_account_check"
+    | "ig_publish_image"
+    | "ig_publish_video"
+    | "ig_comments_list"
+    | "ig_comment_reply"
+    | "ig_private_reply"
+    | "ig_dm_send"
+    | "ig_like"
+    | "fb_account_check"
+    | "fb_publish_post"
+    | "fb_publish_photo"
+    | "fb_publish_video"
+    | "fb_comments_list"
+    | "fb_comment_reply"
+    | "fb_private_reply"
+    | "fb_dm_send"
+    | "fb_like";
+  confirm?: string;
+  caption?: string;
+  message?: string;
+  image_url?: string;
+  video_url?: string;
+  media_type?: "VIDEO" | "REELS" | "STORIES";
+  media_id?: string;
+  comment_id?: string;
+  object_id?: string;
+  recipient_id?: string;
+  link?: string;
+  limit?: string;
+}
+interface R2Config {
+  accountId: string;
+  endpoint: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  publicBaseUrl: string;
+}
 const leadStages: Lead["lead_stage"][] = ["new", "qualified", "replied", "waiting_response", "booked", "converted", "not_interested", "spam"];
 const leadSourceTypes: Lead["source_type"][] = ["comment", "dm", "form", "manual", "email", "whatsapp", "csv"];
+const metaOAuthScopes = [
+  "pages_show_list",
+  "pages_read_engagement",
+  "instagram_basic",
+  "instagram_content_publish"
+];
 
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-    if (url.pathname.startsWith("/api/")) {
+    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/auth/")) {
       await handleApi(req, res, url);
       return;
     }
@@ -66,6 +132,72 @@ server.listen(port, () => {
 });
 
 async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  if (req.method === "GET" && url.pathname === "/auth/x/start") {
+    const clientId = url.searchParams.get("client_id");
+    const accountId = url.searchParams.get("account_id");
+    if (!clientId || !accountId) throw new Error("client_id and account_id are required.");
+    const authorizeUrl = await buildXOAuthAuthorizeUrl({ clientId, accountId });
+    res.writeHead(302, { location: authorizeUrl });
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/auth/x/callback") {
+    const error = url.searchParams.get("error");
+    if (error) {
+      sendHtml(res, 400, renderOAuthResultHtml("X OAuth failed", `X returned error: ${escapeHtml(error)}`));
+      return;
+    }
+    const state = url.searchParams.get("state");
+    const code = url.searchParams.get("code");
+    if (!state || !code) throw new Error("X OAuth callback requires state and code.");
+    const result = await completeXOAuthCallback({ state, code }).catch((error) => {
+      const message = error instanceof Error ? error.message : "Unknown X OAuth callback error.";
+      sendHtml(res, 400, renderOAuthResultHtml("X OAuth account mismatch", escapeHtml(message)));
+      return null;
+    });
+    if (!result) return;
+    sendHtml(res, 200, renderOAuthResultHtml(
+      "X account connected",
+      `Connected @${escapeHtml(result.x_username)} to ${escapeHtml(result.account_id)}. You can close this page or return to Social Ops Hub.`,
+      result.client_id
+    ));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/auth/meta/start") {
+    const clientId = url.searchParams.get("client_id");
+    const accountId = url.searchParams.get("account_id");
+    if (!clientId || !accountId) throw new Error("client_id and account_id are required.");
+    const authorizeUrl = await buildMetaOAuthAuthorizeUrl(clientId, accountId);
+    res.writeHead(302, { location: authorizeUrl });
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/auth/meta/callback") {
+    const error = url.searchParams.get("error") || url.searchParams.get("error_message");
+    if (error) {
+      sendHtml(res, 400, renderOAuthResultHtml("Meta OAuth failed", `Meta returned error: ${escapeHtml(error)}`));
+      return;
+    }
+    const state = url.searchParams.get("state");
+    const code = url.searchParams.get("code");
+    if (!state || !code) throw new Error("Meta OAuth callback requires state and code.");
+    const result = await completeMetaOAuthCallback(state, code).catch((error) => {
+      const message = error instanceof Error ? error.message : "Unknown Meta OAuth callback error.";
+      sendHtml(res, 400, renderOAuthResultHtml("Meta account binding failed", escapeHtml(message)));
+      return null;
+    });
+    if (!result) return;
+    sendHtml(res, 200, renderOAuthResultHtml(
+      "Meta account connected",
+      `Bound ${escapeHtml(result.account_id)} to Page ${escapeHtml(result.page_name)}${result.instagram_username ? ` / IG @${escapeHtml(result.instagram_username)}` : ""}. You can return to Social Ops Hub.`,
+      result.client_id
+    ));
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/clients") {
     sendJson(res, 200, { clients: await listClients() });
     return;
@@ -101,6 +233,13 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
   if (req.method === "POST" && url.pathname === "/api/account/toggle") {
     const body = await readBody<{ client_id: string; account_id: string; field: "posting_enabled" | "lead_tracking_enabled"; value: boolean }>(req);
     await toggleAccount(body);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/account/check") {
+    const body = await readBody<{ client_id: string; account_id: string }>(req);
+    await checkAndUpdateXAccount(body.client_id, body.account_id);
     sendJson(res, 200, await loadState(body.client_id));
     return;
   }
@@ -236,6 +375,20 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/publish/manual-export") {
+    const body = await readBody<{ client_id: string; variant_id: string; publish_task_id?: string }>(req);
+    const result = await exportManualPublishPackage(body.client_id, body.variant_id, body.publish_task_id);
+    sendJson(res, 200, { ...(await loadState(body.client_id)), publish_action_log: JSON.stringify(result, null, 2) });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/publish/manual-complete") {
+    const body = await readBody<{ client_id: string; publish_task_id: string; post_url: string }>(req);
+    await markPublishTaskManualComplete(body.client_id, body.publish_task_id, body.post_url);
+    sendJson(res, 200, await loadState(body.client_id));
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/lead/import") {
     const body = await readBody<LeadImportRequest>(req);
     await importLead(body);
@@ -296,6 +449,20 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     const body = await readBody<XActionRequest>(req);
     const log = await runXAction(body);
     sendJson(res, 200, { ...(await loadState(body.client_id)), x_action_log: log });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/publish/dry-run-preview") {
+    const body = await readBody<{ client_id: string; publish_task_id: string }>(req);
+    const log = await buildXPublishDryRunPreview(body.client_id, body.publish_task_id);
+    sendJson(res, 200, { ...(await loadState(body.client_id)), x_action_log: log });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/x/publish/manual-complete") {
+    const body = await readBody<{ client_id: string; publish_task_id: string }>(req);
+    await markXPublishTaskManualComplete(body.client_id, body.publish_task_id);
+    sendJson(res, 200, await loadState(body.client_id));
     return;
   }
 
@@ -362,6 +529,33 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL): P
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/meta/account/check") {
+    const body = await readBody<{ client_id: string; account_id: string }>(req);
+    const result = await checkAndUpdateMetaAccount(body.client_id, body.account_id);
+    sendJson(res, 200, { ...(await loadState(body.client_id)), meta_action_log: JSON.stringify(result, null, 2) });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/meta/publish/dry-run") {
+    const body = await readBody<{ client_id: string; variant_id: string; publish_task_id?: string }>(req);
+    const preview = await buildMetaPreviewForClient(body.client_id, body.variant_id, body.publish_task_id);
+    sendJson(res, 200, { ...(await loadState(body.client_id)), meta_action_log: JSON.stringify(preview, null, 2) });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/meta/live-action") {
+    const body = await readBody<MetaLiveActionRequest>(req);
+    const result = await runMetaLiveAction(body);
+    sendJson(res, 200, { ...(await loadState(body.client_id)), meta_action_log: JSON.stringify(result, null, 2) });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/media/r2-upload") {
+    const upload = await uploadMultipartMediaToR2(req);
+    sendJson(res, 200, upload);
+    return;
+  }
+
   sendJson(res, 404, { error: "API route not found" });
 }
 
@@ -375,6 +569,7 @@ async function loadState(clientId: string) {
   const variants = await readClientArray<PlatformVariant>(clientId, "platform-variants.json");
   const queue = await readClientArray<PublishTask>(clientId, "publish-queue.json");
   const records = await readClientArray<PublishRecord>(clientId, "publish-records.json");
+  const audit = await readClientArray<PublishAuditEntry>(clientId, "publish-audit-log.json");
   const leads = await readClientArray<Lead>(clientId, "leads.json");
   const drafts = await readClientArray<ReplyDraft>(clientId, "reply-drafts.json");
   const xResearchPosts = await readSafeClientArray<XResearchPost>(clientId, "x-research-posts.json", xJsonErrors);
@@ -385,6 +580,8 @@ async function loadState(clientId: string) {
   const xApiUsage = await readSafeClientArray<XApiUsageEntry>(clientId, "x-api-usage.json", xJsonErrors);
   const xReports = await readXReports(clientId, xJsonErrors);
   const xBudget = buildXBudgetSummary(client, xApiUsage);
+  const metaFoundation = await readMetaFoundationConfig();
+  const metaEnv = await loadMetaEnv();
 
   return {
     clients: await listClients(),
@@ -402,12 +599,22 @@ async function loadState(clientId: string) {
     lead_source_type_options: leadSourceTypes,
     client,
     accounts,
+    x_account_auth: await buildXAccountAuthSummary(accounts),
     contents,
     variants,
     queue,
     records,
     leads,
     drafts,
+    meta: {
+      foundation: metaFoundation,
+      env_status: buildMetaEnvStatus(metaFoundation, metaEnv),
+      manual_exports: await readMetaManualExports(clientId)
+    },
+    operations: {
+      manual_exports: await readManualExports(clientId),
+      report_status: await readReportStatus(clientId)
+    },
     x: {
       research_posts: xResearchPosts,
       kol_prospects: xKolProspects,
@@ -447,6 +654,8 @@ interface AccountRequest {
   auth_status?: PlatformAccount["auth_status"];
   status?: PlatformAccount["status"];
   capability_override?: Partial<PlatformCapabilities>;
+  x_binding?: PlatformAccount["x_binding"];
+  meta_binding?: PlatformAccount["meta_binding"];
   notes: string;
 }
 
@@ -500,6 +709,8 @@ async function createAccount(body: AccountRequest): Promise<void> {
     auth_status: body.auth_status ?? "mock",
     status: body.status ?? "active",
     capability_override: body.capability_override ?? {},
+    x_binding: body.platform === "x" ? body.x_binding : undefined,
+    meta_binding: ["facebook", "instagram"].includes(body.platform) ? body.meta_binding : undefined,
     notes: body.notes || "",
     created_at: now,
     updated_at: now
@@ -527,6 +738,8 @@ async function updateAccount(body: AccountRequest & { account_id: string }): Pro
     auth_status: body.auth_status ?? account.auth_status,
     status: body.status ?? account.status,
     capability_override: body.capability_override ?? account.capability_override ?? {},
+    x_binding: body.platform === "x" ? body.x_binding ?? account.x_binding : undefined,
+    meta_binding: ["facebook", "instagram"].includes(body.platform) ? body.meta_binding ?? account.meta_binding : undefined,
     notes: body.notes || "",
     updated_at: new Date().toISOString()
   });
@@ -540,6 +753,36 @@ async function toggleAccount(body: { client_id: string; account_id: string; fiel
   account[body.field] = body.value;
   account.updated_at = new Date().toISOString();
   await writeClientArray(body.client_id, "accounts.json", accounts);
+}
+
+async function checkAndUpdateXAccount(clientId: string, accountId: string): Promise<void> {
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const account = accounts.find((item) => item.account_id === accountId);
+  if (!account) throw new Error(`Account ${accountId} not found.`);
+  if (account.platform !== "x") throw new Error(`Account ${accountId} is not an X account.`);
+  const auth = await checkXAccountAuth(account);
+  account.x_binding = {
+    ...(account.x_binding ?? {}),
+    x_username: auth.x_username ?? account.x_binding?.x_username ?? account.account_name,
+    token_ref: auth.token_ref,
+    token_status: auth.token_status,
+    scopes: auth.scopes,
+    oauth_version: account.x_binding?.oauth_version ?? "2.0",
+    last_checked_at: new Date().toISOString(),
+    setup_status: auth.setup_status,
+    setup_notes: auth.notes
+  };
+  account.auth_status = auth.token_status === "configured" ? "connected" : auth.token_status === "expired" ? "expired" : "disconnected";
+  account.updated_at = new Date().toISOString();
+  await writeClientArray(clientId, "accounts.json", accounts);
+}
+
+async function buildXAccountAuthSummary(accounts: PlatformAccount[]) {
+  const result: Record<string, Awaited<ReturnType<typeof checkXAccountAuth>>> = {};
+  for (const account of accounts.filter((item) => item.platform === "x")) {
+    result[account.account_id] = await checkXAccountAuth(account);
+  }
+  return result;
 }
 
 function validateAccountRequest(body: AccountRequest): void {
@@ -865,7 +1108,8 @@ interface CreateClientRequest {
 async function listClients(): Promise<Array<{ client_id: string; client_name: string; industry: string; status: Client["status"] }>> {
   let entries: string[] = [];
   try {
-    entries = await readdir(dataRoot);
+    const dirents = await readdir(dataRoot, { withFileTypes: true });
+    entries = dirents.filter((entry) => entry.isDirectory() && !entry.name.startsWith(".")).map((entry) => entry.name);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
@@ -1081,6 +1325,7 @@ async function runPublish(clientId: string): Promise<void> {
   const variants = await readClientArray<PlatformVariant>(clientId, "platform-variants.json");
   const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
   const records = await readClientArray<PublishRecord>(clientId, "publish-records.json");
+  const audit = await readClientArray<PublishAuditEntry>(clientId, "publish-audit-log.json");
   const rules = await readPublishRules();
   const capabilities = await readPlatformCapabilities();
   const now = new Date();
@@ -1106,10 +1351,27 @@ async function runPublish(clientId: string): Promise<void> {
     const readiness = await checkPublishReadiness({ content, variant, account, queue, task, rules, capabilities, currentTaskId: task.publish_task_id });
     if (!readiness.ready) {
       blockTask(task, readiness.reason, readiness.needsManualReview);
+      audit.push(makePublishAuditEntry({
+        event_type: "publish_blocked",
+        task,
+        variant,
+        message: "Publish task blocked by readiness check.",
+        reason: readiness.reason,
+        status_before: "scheduled",
+        source: "web"
+      }));
       continue;
     }
     if (!variant) continue;
     const publisher = task.platform === "x" ? xPublisher : createMockPublisher(task.platform);
+    audit.push(makePublishAuditEntry({
+      event_type: "publish_attempt",
+      task,
+      variant,
+      message: "Publish attempt started.",
+      status_before: task.status,
+      source: "web"
+    }));
     const result = await publisher.publish(task, variant);
     if (result.ok) {
       const recordUrl = result.post_url ?? result.mock_url ?? `https://mock.social/${task.platform}/${result.platform_post_id ?? task.publish_task_id}`;
@@ -1136,13 +1398,937 @@ async function runPublish(clientId: string): Promise<void> {
         mock_url: result.mock_url ?? recordUrl,
         post_url: recordUrl
       });
+      audit.push(makePublishAuditEntry({
+        event_type: "publish_success",
+        task,
+        variant,
+        message: "Publish task completed and publish record appended.",
+        status_before: "scheduled",
+        status_after: task.status,
+        platform_post_id: task.platform_post_id,
+        post_url: recordUrl,
+        publish_mode: result.publish_mode ?? (task.publish_method === "official_api" ? "api" : "mock"),
+        source: "web"
+      }));
     } else {
       registerPublishFailure(task, result.error_message ?? "Unknown publish error");
+      audit.push(makePublishAuditEntry({
+        event_type: "publish_failed",
+        task,
+        variant,
+        message: "Publish task failed.",
+        reason: task.last_error,
+        status_before: "scheduled",
+        status_after: task.status,
+        source: "web"
+      }));
     }
   }
 
   await writeClientArray(clientId, "publish-queue.json", queue);
   await writeClientArray(clientId, "publish-records.json", records);
+  await writeClientArray(clientId, "publish-audit-log.json", audit);
+}
+
+async function buildXPublishDryRunPreview(clientId: string, taskId: string): Promise<string> {
+  const contents = await readClientArray<ContentAsset>(clientId, "content-pool.json");
+  const variants = await readClientArray<PlatformVariant>(clientId, "platform-variants.json");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const queue = await readClientArray<PublishTask>(clientId, "publish-queue.json");
+  const rules = await readPublishRules();
+  const capabilities = await readPlatformCapabilities();
+  const task = findPublishTask(queue, taskId);
+  if (task.platform !== "x") throw new Error("Dry-run preview is only available for X publish tasks.");
+  const variant = variants.find((item) => item.variant_id === task.variant_id);
+  const content = contents.find((item) => item.content_id === task.content_id);
+  const account = accounts.find((item) => item.account_id === task.account_id);
+  const readiness = await checkPublishReadiness({ content, variant, account, queue, task, rules, capabilities, currentTaskId: task.publish_task_id });
+  await appendPublishAudit(clientId, makePublishAuditEntry({
+    event_type: "dry_run_preview",
+    task,
+    variant,
+    message: "X dry-run preview generated. No live API call was made.",
+    reason: readiness.ready ? null : readiness.reason,
+    publish_mode: "dry_run",
+    source: "web"
+  }));
+  const lines = [
+    "X publish dry-run preview only. No live API call was made.",
+    `task: ${task.publish_task_id}`,
+    `account: ${task.account_id}`,
+    `scheduled_at: ${task.scheduled_at}`,
+    `publish_method: ${task.publish_method}`,
+    `readiness: ${readiness.ready ? "ready" : "blocked"}`,
+    readiness.ready ? "" : `blocked_reason: ${readiness.reason}`,
+    "",
+    "caption:",
+    variant?.caption ?? "(variant not found)",
+    "",
+    "cta:",
+    variant?.cta ?? "",
+    "",
+    "hashtags:",
+    (variant?.hashtags ?? []).join(" ")
+  ];
+  return lines.filter((line, index) => line !== "" || lines[index - 1] !== "").join("\n");
+}
+
+async function checkAndUpdateMetaAccount(clientId: string, accountId: string) {
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const account = accounts.find((item) => item.account_id === accountId);
+  if (!account) throw new Error(`Account ${accountId} not found.`);
+  const result = await checkMetaAccount(account, "dry_run");
+  account.meta_binding = {
+    ...(account.meta_binding ?? {}),
+    setup_status: result.ok ? "ready_for_dry_run" : "needs_meta_setup",
+    last_checked_at: new Date().toISOString(),
+    setup_notes: [...result.warnings, ...result.next_steps]
+  };
+  await writeClientArray(clientId, "accounts.json", accounts);
+  return result;
+}
+
+async function buildMetaPreviewForClient(clientId: string, variantId: string, taskId?: string) {
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const variants = await readClientArray<PlatformVariant>(clientId, "platform-variants.json");
+  const queue = await readClientArray<PublishTask>(clientId, "publish-queue.json");
+  const variant = variants.find((item) => item.variant_id === variantId);
+  if (!variant) throw new Error(`Variant ${variantId} not found.`);
+  const account = accounts.find((item) => item.account_id === variant.account_id);
+  if (!account) throw new Error(`Account ${variant.account_id} not found.`);
+  const task = taskId
+    ? queue.find((item) => item.publish_task_id === taskId)
+    : queue.find((item) => item.variant_id === variant.variant_id);
+  const preview = await buildMetaDryRunPreview({ account, variant, task });
+  await appendPublishAudit(clientId, makePublishAuditEntry({
+    event_type: "meta_dry_run_preview",
+    task,
+    variant,
+    message: "Meta dry-run preview generated. No Meta Graph API request was made.",
+    reason: preview.warnings.join(" | ") || null,
+    publish_method: "dry_run",
+    publish_mode: "dry_run",
+    source: "web",
+    metadata: {
+      endpoint_preview: preview.endpoint_preview,
+      payload_preview: preview.payload_preview
+    }
+  }));
+  return preview;
+}
+
+async function runMetaLiveAction(body: MetaLiveActionRequest): Promise<Record<string, unknown>> {
+  if (!body.client_id || !body.account_id) throw new Error("client_id and account_id are required.");
+  const accounts = await readClientArray<PlatformAccount>(body.client_id, "accounts.json");
+  const account = findAccount(accounts, body.account_id);
+  const isWrite = !body.action.endsWith("_account_check") && !body.action.endsWith("_comments_list");
+  if (isWrite && body.confirm !== "LIVE") throw new Error("Live Meta write action requires typing LIVE in the confirm field.");
+  if (account.status !== "active") throw new Error(`Account ${account.account_id} is not active.`);
+  if (isWrite && !account.posting_enabled) throw new Error(`Account ${account.account_id} has posting disabled.`);
+
+  if (body.action.startsWith("ig_")) {
+    if (account.platform !== "instagram") throw new Error(`Account ${account.account_id} is ${account.platform}, not instagram.`);
+    const config = await loadInstagramGraphConfig(account);
+    if (!config.accessToken) throw new Error("Meta access token missing. Configure MetaAPI.env first.");
+    let result: Record<string, unknown>;
+    let platformPostId: string | null = null;
+    switch (body.action) {
+      case "ig_account_check":
+        if (!config.igUserId) throw new Error("Instagram business account id missing.");
+        result = await instagramGraphGet(`/${config.igUserId}`, { fields: "id,username,name,profile_picture_url" }, config.accessToken);
+        break;
+      case "ig_publish_image": {
+        if (!config.igUserId) throw new Error("Instagram business account id missing.");
+        const published = await publishInstagramMedia({ igUserId: config.igUserId, imageUrl: required(body.image_url, "image_url"), caption: body.caption ?? "" }, config.accessToken);
+        platformPostId = published.media_id;
+        result = published;
+        break;
+      }
+      case "ig_publish_video": {
+        if (!config.igUserId) throw new Error("Instagram business account id missing.");
+        const mediaType = body.media_type ?? "REELS";
+        const published = await publishInstagramMedia({ igUserId: config.igUserId, videoUrl: required(body.video_url, "video_url"), caption: body.caption ?? "", mediaType }, config.accessToken);
+        platformPostId = published.media_id;
+        result = published;
+        break;
+      }
+      case "ig_comments_list":
+        result = await instagramGraphGet(`/${required(body.media_id, "media_id")}/comments`, {
+          fields: "id,text,username,timestamp,like_count,replies{id,text,username,timestamp,like_count}",
+          limit: body.limit || "50"
+        }, config.accessToken);
+        break;
+      case "ig_comment_reply":
+        result = await instagramGraphPost(`/${required(body.comment_id, "comment_id")}/replies`, { message: required(body.message, "message") }, config.accessToken);
+        break;
+      case "ig_private_reply":
+        result = await instagramGraphPost(`/${required(body.comment_id, "comment_id")}/private_replies`, { message: required(body.message, "message") }, config.accessToken);
+        break;
+      case "ig_dm_send":
+        if (!config.pageId) throw new Error("Connected Facebook Page id missing.");
+        result = await sendInstagramDm(config.pageId, required(body.recipient_id, "recipient_id"), required(body.message, "message"), config.pageAccessToken);
+        break;
+      case "ig_like":
+        result = await instagramGraphPost(`/${required(body.object_id, "object_id")}/likes`, {}, config.accessToken);
+        break;
+      default:
+        throw new Error(`Unsupported Instagram action: ${body.action}`);
+    }
+    if (isWrite) await appendMetaLiveAudit(body.client_id, account, body.action, result, platformPostId);
+    return { ok: true, action: body.action, account_id: account.account_id, result };
+  }
+
+  if (body.action.startsWith("fb_")) {
+    if (account.platform !== "facebook") throw new Error(`Account ${account.account_id} is ${account.platform}, not facebook.`);
+    const config = await loadFacebookGraphConfig(account);
+    if (!config.pageAccessToken) throw new Error("Meta Page access token missing. Configure MetaAPI.env first.");
+    if (!config.pageId) throw new Error("Facebook Page id missing.");
+    let result: Record<string, unknown>;
+    let platformPostId: string | null = null;
+    switch (body.action) {
+      case "fb_account_check":
+        result = await facebookGraphGet(`/${config.pageId}`, { fields: "id,name,link,fan_count,followers_count" }, config.pageAccessToken);
+        break;
+      case "fb_publish_post":
+        result = await facebookGraphPost(`/${config.pageId}/feed`, { message: required(body.message, "message"), link: body.link || undefined }, config.pageAccessToken);
+        platformPostId = typeof result.id === "string" ? result.id : null;
+        break;
+      case "fb_publish_photo":
+        result = await facebookGraphPost(`/${config.pageId}/photos`, { url: required(body.image_url, "image_url"), caption: body.caption ?? "" }, config.pageAccessToken);
+        platformPostId = typeof result.post_id === "string" ? result.post_id : typeof result.id === "string" ? result.id : null;
+        break;
+      case "fb_publish_video":
+        result = await facebookGraphPost(`/${config.pageId}/videos`, { file_url: required(body.video_url, "video_url"), description: body.message ?? body.caption ?? "" }, config.pageAccessToken);
+        platformPostId = typeof result.id === "string" ? result.id : null;
+        break;
+      case "fb_comments_list":
+        result = await facebookGraphGet(`/${required(body.object_id, "object_id")}/comments`, {
+          fields: "id,message,from,created_time,like_count,comment_count,attachment,comments{id,message,from,created_time,like_count}",
+          limit: body.limit || "50"
+        }, config.pageAccessToken);
+        break;
+      case "fb_comment_reply":
+        result = await facebookGraphPost(`/${required(body.comment_id, "comment_id")}/comments`, { message: required(body.message, "message") }, config.pageAccessToken);
+        break;
+      case "fb_private_reply":
+        result = await facebookGraphPost(`/${required(body.comment_id, "comment_id")}/private_replies`, { message: required(body.message, "message") }, config.pageAccessToken);
+        break;
+      case "fb_dm_send":
+        result = await sendFacebookPageMessage(config.pageId, required(body.recipient_id, "recipient_id"), required(body.message, "message"), config.pageAccessToken);
+        break;
+      case "fb_like":
+        result = await facebookGraphPost(`/${required(body.object_id, "object_id")}/likes`, {}, config.pageAccessToken);
+        break;
+      default:
+        throw new Error(`Unsupported Facebook action: ${body.action}`);
+    }
+    if (isWrite) await appendMetaLiveAudit(body.client_id, account, body.action, result, platformPostId);
+    return { ok: true, action: body.action, account_id: account.account_id, result };
+  }
+
+  throw new Error(`Unsupported Meta action: ${body.action}`);
+}
+
+async function buildMetaOAuthAuthorizeUrl(clientId: string, accountId: string): Promise<string> {
+  const env = await loadMetaEnv();
+  if (!env.META_APP_ID) throw new Error("META_APP_ID is missing in MetaAPI.env.");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const account = findAccount(accounts, accountId);
+  if (account.platform !== "facebook" && account.platform !== "instagram") {
+    throw new Error(`Account ${accountId} is ${account.platform}, not a Meta account.`);
+  }
+  const redirectUri = env.META_REDIRECT_URI || "http://localhost:4321/auth/meta/callback";
+  const state = randomBytes(32).toString("base64url");
+  await writeMetaOAuthState({
+    state,
+    client_id: clientId,
+    account_id: accountId,
+    redirect_uri: redirectUri,
+    scopes: metaOAuthScopes,
+    created_at: new Date().toISOString()
+  });
+  const version = env.META_GRAPH_API_VERSION || "v25.0";
+  const authUrl = new URL(`https://www.facebook.com/${version}/dialog/oauth`);
+  authUrl.searchParams.set("client_id", env.META_APP_ID);
+  authUrl.searchParams.set("redirect_uri", redirectUri);
+  authUrl.searchParams.set("state", state);
+  authUrl.searchParams.set("scope", metaOAuthScopes.join(","));
+  authUrl.searchParams.set("response_type", "code");
+  authUrl.searchParams.set("auth_type", "rerequest");
+  return authUrl.toString();
+}
+
+async function completeMetaOAuthCallback(stateValue: string, code: string): Promise<{ client_id: string; account_id: string; page_name: string; instagram_username: string | null }> {
+  const env = await loadMetaEnv();
+  if (!env.META_APP_ID || !env.META_APP_SECRET) throw new Error("META_APP_ID and META_APP_SECRET are required in MetaAPI.env.");
+  const oauthState = await readMetaOAuthState(stateValue);
+  assertFreshMetaState(oauthState);
+  const version = env.META_GRAPH_API_VERSION || "v25.0";
+  const tokenUrl = new URL(`https://graph.facebook.com/${version}/oauth/access_token`);
+  tokenUrl.searchParams.set("client_id", env.META_APP_ID);
+  tokenUrl.searchParams.set("client_secret", env.META_APP_SECRET);
+  tokenUrl.searchParams.set("redirect_uri", oauthState.redirect_uri);
+  tokenUrl.searchParams.set("code", code);
+  const tokenResponse = await fetch(tokenUrl);
+  const tokenJson = await parseMetaJson(tokenResponse, "Meta OAuth token exchange");
+  const userAccessToken = stringField(tokenJson, "access_token");
+  if (!userAccessToken) throw new Error("Meta OAuth token response did not include access_token.");
+
+  const pagesUrl = new URL(`https://graph.facebook.com/${version}/me/accounts`);
+  pagesUrl.searchParams.set("fields", "id,name,access_token,tasks,instagram_business_account{id,username,name}");
+  pagesUrl.searchParams.set("access_token", userAccessToken);
+  const pagesResponse = await fetch(pagesUrl);
+  const pagesJson = await parseMetaJson(pagesResponse, "Meta /me/accounts");
+  const pages = Array.isArray(pagesJson.data) ? pagesJson.data as Array<Record<string, unknown>> : [];
+  if (!pages.length) throw new Error("Meta returned no Pages. Confirm the Facebook user has access to the Page and granted pages_show_list.");
+
+  const accounts = await readClientArray<PlatformAccount>(oauthState.client_id, "accounts.json");
+  const account = findAccount(accounts, oauthState.account_id);
+  const selected = selectMetaPageForAccount(account, pages);
+  const pageId = required(stringField(selected, "id") ?? undefined, "page_id");
+  const pageName = stringField(selected, "name") || pageId;
+  const pageAccessToken = stringField(selected, "access_token") || userAccessToken;
+  const ig = selected.instagram_business_account as Record<string, unknown> | undefined;
+  const igId = ig ? stringField(ig, "id") : null;
+  const igUsername = ig ? stringField(ig, "username") || stringField(ig, "name") : null;
+  if (account.platform === "instagram" && !igId) throw new Error(`Selected Page ${pageName} does not expose instagram_business_account. Confirm the IG professional account is linked to this Page.`);
+
+  const tokenRef = `meta_${oauthState.client_id}_${oauthState.account_id}`;
+  await mkdir(join(process.cwd(), "data", "token-vault", "meta"), { recursive: true });
+  await writeFile(join(process.cwd(), "data", "token-vault", "meta", `${tokenRef}.json`), `${JSON.stringify({
+    token_ref: tokenRef,
+    client_id: oauthState.client_id,
+    account_id: oauthState.account_id,
+    platform: account.platform,
+    access_token: userAccessToken,
+    page_access_token: pageAccessToken,
+    page_id: pageId,
+    page_name: pageName,
+    instagram_business_account_id: igId,
+    instagram_username: igUsername,
+    scopes: oauthState.scopes,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }, null, 2)}\n`, "utf8");
+
+  account.auth_status = "connected";
+  account.account_name = account.platform === "instagram" && igUsername ? igUsername : pageName;
+  account.display_name = account.platform === "instagram" && igUsername ? igUsername : pageName;
+  account.account_url = account.platform === "instagram" && igUsername ? `https://instagram.com/${igUsername}` : `https://www.facebook.com/${pageId}`;
+  account.meta_binding = {
+    ...(account.meta_binding ?? {}),
+    meta_app_id: env.META_APP_ID,
+    page_id: account.platform === "facebook" ? pageId : account.meta_binding?.page_id ?? pageId,
+    page_name: account.platform === "facebook" ? pageName : account.meta_binding?.page_name ?? pageName,
+    instagram_business_account_id: account.platform === "instagram" ? igId ?? undefined : account.meta_binding?.instagram_business_account_id,
+    instagram_username: account.platform === "instagram" ? igUsername ?? undefined : account.meta_binding?.instagram_username,
+    connected_facebook_page_id: account.platform === "instagram" ? pageId : account.meta_binding?.connected_facebook_page_id ?? undefined,
+    connected_facebook_page_name: account.platform === "instagram" ? pageName : account.meta_binding?.connected_facebook_page_name ?? undefined,
+    token_ref: tokenRef,
+    token_status: "configured",
+    permissions: oauthState.scopes,
+    setup_status: "ready_for_api",
+    last_checked_at: new Date().toISOString(),
+    setup_notes: [`Connected through Meta OAuth. Page: ${pageName}${igUsername ? `, IG: @${igUsername}` : ""}.`]
+  };
+  account.updated_at = new Date().toISOString();
+  await writeClientArray(oauthState.client_id, "accounts.json", accounts);
+  return { client_id: oauthState.client_id, account_id: oauthState.account_id, page_name: pageName, instagram_username: igUsername };
+}
+
+function selectMetaPageForAccount(account: PlatformAccount, pages: Array<Record<string, unknown>>): Record<string, unknown> {
+  const binding = account.meta_binding ?? {};
+  if (account.platform === "facebook") {
+    return pages.find((page) => stringField(page, "id") === binding.page_id)
+      || pages.find((page) => normalizeName(stringField(page, "name")) === normalizeName(account.account_name))
+      || pages[0];
+  }
+  return pages.find((page) => {
+    const ig = page.instagram_business_account as Record<string, unknown> | undefined;
+    return ig && stringField(ig, "id") === binding.instagram_business_account_id;
+  }) || pages.find((page) => {
+    const ig = page.instagram_business_account as Record<string, unknown> | undefined;
+    return ig && normalizeName(stringField(ig, "username")) === normalizeName(account.account_name);
+  }) || pages.find((page) => Boolean(page.instagram_business_account)) || pages[0];
+}
+
+async function writeMetaOAuthState(state: { state: string; client_id: string; account_id: string; redirect_uri: string; scopes: string[]; created_at: string }): Promise<void> {
+  await mkdir(join(process.cwd(), "data", "token-vault", "meta", "oauth-states"), { recursive: true });
+  await writeFile(metaStatePath(state.state), `${JSON.stringify(state, null, 2)}\n`, "utf8");
+}
+
+async function readMetaOAuthState(state: string): Promise<{ state: string; client_id: string; account_id: string; redirect_uri: string; scopes: string[]; created_at: string }> {
+  return JSON.parse(await readFile(metaStatePath(state), "utf8")) as { state: string; client_id: string; account_id: string; redirect_uri: string; scopes: string[]; created_at: string };
+}
+
+function metaStatePath(state: string): string {
+  return join(process.cwd(), "data", "token-vault", "meta", "oauth-states", `${state.replace(/[^a-zA-Z0-9_.-]/g, "_")}.json`);
+}
+
+function assertFreshMetaState(state: { created_at: string }): void {
+  const ageMs = Date.now() - Date.parse(state.created_at);
+  if (!Number.isFinite(ageMs) || ageMs > 10 * 60 * 1000) throw new Error("Meta OAuth state expired. Start the connect flow again.");
+}
+
+async function parseMetaJson(response: Response, label: string): Promise<Record<string, unknown>> {
+  const text = await response.text();
+  let json: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (typeof parsed === "object" && parsed !== null) json = parsed as Record<string, unknown>;
+  } catch {
+    json = {};
+  }
+  if (!response.ok) throw new Error(`${label} failed (${response.status}): ${JSON.stringify(json).slice(0, 800) || text.slice(0, 800)}`);
+  return json;
+}
+
+function stringField(obj: Record<string, unknown>, field: string): string | null {
+  const value = obj[field];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function normalizeName(value: string | null | undefined): string {
+  return (value || "").trim().replace(/^@/, "").toLowerCase();
+}
+
+async function appendMetaLiveAudit(clientId: string, account: PlatformAccount, action: string, result: Record<string, unknown>, platformPostId: string | null): Promise<void> {
+  await appendPublishAudit(clientId, {
+    audit_id: makeId("audit"),
+    timestamp: new Date().toISOString(),
+    event_type: "automation_success",
+    client_id: clientId,
+    publish_task_id: null,
+    content_id: null,
+    variant_id: null,
+    platform: account.platform,
+    account_id: account.account_id,
+    publish_method: "official_api",
+    publish_mode: "api",
+    status_before: null,
+    status_after: "published",
+    platform_post_id: platformPostId,
+    post_url: null,
+    message: `Meta live action completed: ${action}`,
+    reason: null,
+    actor: "operator",
+    source: "web",
+    metadata: {
+      automation_action: action,
+      account_id: account.account_id,
+      platform: account.platform,
+      result
+    }
+  });
+}
+
+function required(value: string | undefined, field: string): string {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) throw new Error(`${field} is required.`);
+  return trimmed;
+}
+
+async function uploadMultipartMediaToR2(req: IncomingMessage): Promise<{ ok: true; url: string; key: string; content_type: string; size: number }> {
+  const parsed = await readMultipartForm(req);
+  const clientId = sanitizeKeyPart(parsed.fields.client_id || "client");
+  const platform = sanitizeKeyPart(parsed.fields.platform || "meta");
+  const file = parsed.files.file;
+  if (!file) throw new Error("Upload requires a file field.");
+  if (!file.content.length) throw new Error("Uploaded file is empty.");
+  if (file.content.length > 100 * 1024 * 1024) throw new Error("Uploaded file is too large. Limit is 100MB.");
+  const config = await loadR2Config();
+  const ext = inferFileExtension(file.filename, file.contentType);
+  const key = `uploads/${clientId}/${platform}/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${randomBytes(6).toString("hex")}${ext}`;
+  await putR2Object(config, key, file.content, file.contentType);
+  return {
+    ok: true,
+    url: `${config.publicBaseUrl.replace(/\/+$/, "")}/${key}`,
+    key,
+    content_type: file.contentType,
+    size: file.content.length
+  };
+}
+
+async function loadR2Config(): Promise<R2Config> {
+  const values = {
+    ...(await readLocalEnvPath(join(dirname(process.cwd()), "R2API.env"))),
+    ...(await readLocalEnvFile("R2API.env")),
+    ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+  };
+  const config = {
+    accountId: required(values.R2_ACCOUNT_ID, "R2_ACCOUNT_ID"),
+    endpoint: required(values.R2_S3_ENDPOINT, "R2_S3_ENDPOINT").replace(/\/+$/, ""),
+    bucket: required(values.R2_BUCKET, "R2_BUCKET"),
+    accessKeyId: required(values.R2_ACCESS_KEY_ID, "R2_ACCESS_KEY_ID"),
+    secretAccessKey: required(values.R2_SECRET_ACCESS_KEY, "R2_SECRET_ACCESS_KEY"),
+    publicBaseUrl: required(values.R2_PUBLIC_BASE_URL, "R2_PUBLIC_BASE_URL")
+  };
+  return config;
+}
+
+async function putR2Object(config: R2Config, key: string, body: Buffer, contentType: string): Promise<void> {
+  const endpoint = new URL(config.endpoint);
+  const host = endpoint.host;
+  const encodedKey = key.split("/").map(encodeURIComponent).join("/");
+  const path = `/${encodeURIComponent(config.bucket)}/${encodedKey}`;
+  const url = `${endpoint.protocol}//${host}${path}`;
+  const now = new Date();
+  const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+  const dateStamp = amzDate.slice(0, 8);
+  const payloadHash = sha256Hex(body);
+  const headers: Record<string, string> = {
+    host,
+    "content-type": contentType,
+    "x-amz-content-sha256": payloadHash,
+    "x-amz-date": amzDate
+  };
+  const signedHeaders = Object.keys(headers).sort().join(";");
+  const canonicalHeaders = Object.keys(headers).sort().map((name) => `${name}:${headers[name]}\n`).join("");
+  const canonicalRequest = ["PUT", path, "", canonicalHeaders, signedHeaders, payloadHash].join("\n");
+  const credentialScope = `${dateStamp}/auto/s3/aws4_request`;
+  const stringToSign = ["AWS4-HMAC-SHA256", amzDate, credentialScope, sha256Hex(canonicalRequest)].join("\n");
+  const signingKey = getAwsSigningKey(config.secretAccessKey, dateStamp, "auto", "s3");
+  const signature = createHmac("sha256", signingKey).update(stringToSign).digest("hex");
+  const authorization = `AWS4-HMAC-SHA256 Credential=${config.accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: {
+      ...headers,
+      authorization
+    },
+    body: new Uint8Array(body)
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`R2 upload failed (${response.status}): ${text.slice(0, 800)}`);
+  }
+}
+
+function getAwsSigningKey(secret: string, dateStamp: string, region: string, service: string): Buffer {
+  const kDate = createHmac("sha256", `AWS4${secret}`).update(dateStamp).digest();
+  const kRegion = createHmac("sha256", kDate).update(region).digest();
+  const kService = createHmac("sha256", kRegion).update(service).digest();
+  return createHmac("sha256", kService).update("aws4_request").digest();
+}
+
+function sha256Hex(value: string | Buffer): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function readLocalEnvFile(fileName: string): Promise<Record<string, string>> {
+  return readLocalEnvPath(join(process.cwd(), fileName));
+}
+
+async function readLocalEnvPath(filePath: string): Promise<Record<string, string>> {
+  try {
+    return parseLocalEnv(await readFile(filePath, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw error;
+  }
+}
+
+function parseLocalEnv(raw: string): Record<string, string> {
+  const parsed: Record<string, string> = {};
+  for (const rawLine of raw.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const equalsIndex = line.indexOf("=");
+    if (equalsIndex < 1) continue;
+    parsed[line.slice(0, equalsIndex).trim()] = line.slice(equalsIndex + 1).trim().replace(/^['"]|['"]$/g, "");
+  }
+  return parsed;
+}
+
+async function readMultipartForm(req: IncomingMessage): Promise<{ fields: Record<string, string>; files: Record<string, { filename: string; contentType: string; content: Buffer }> }> {
+  const contentType = req.headers["content-type"] || "";
+  const match = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
+  if (!match) throw new Error("Expected multipart/form-data upload.");
+  const boundary = Buffer.from(`--${match[1] || match[2]}`);
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  const body = Buffer.concat(chunks);
+  const fields: Record<string, string> = {};
+  const files: Record<string, { filename: string; contentType: string; content: Buffer }> = {};
+  let start = body.indexOf(boundary);
+  while (start !== -1) {
+    start += boundary.length;
+    if (body[start] === 45 && body[start + 1] === 45) break;
+    if (body[start] === 13 && body[start + 1] === 10) start += 2;
+    const headerEnd = body.indexOf(Buffer.from("\r\n\r\n"), start);
+    if (headerEnd === -1) break;
+    const headerText = body.slice(start, headerEnd).toString("utf8");
+    const nextBoundary = body.indexOf(boundary, headerEnd + 4);
+    if (nextBoundary === -1) break;
+    let content = body.slice(headerEnd + 4, nextBoundary);
+    if (content.length >= 2 && content[content.length - 2] === 13 && content[content.length - 1] === 10) content = content.slice(0, -2);
+    const disposition = /content-disposition:\s*form-data;([^\r\n]+)/i.exec(headerText)?.[1] || "";
+    const name = /name="([^"]+)"/i.exec(disposition)?.[1];
+    const filename = /filename="([^"]*)"/i.exec(disposition)?.[1];
+    const partContentType = /content-type:\s*([^\r\n]+)/i.exec(headerText)?.[1]?.trim() || "application/octet-stream";
+    if (name && filename !== undefined) files[name] = { filename, contentType: partContentType, content };
+    else if (name) fields[name] = content.toString("utf8");
+    start = nextBoundary;
+  }
+  return { fields, files };
+}
+
+function sanitizeKeyPart(value: string): string {
+  return value.trim().replace(/[^a-zA-Z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "") || "item";
+}
+
+function inferFileExtension(filename: string, contentType: string): string {
+  const existing = extname(filename).toLowerCase();
+  if (existing && existing.length <= 8) return existing;
+  if (contentType === "image/jpeg") return ".jpg";
+  if (contentType === "image/png") return ".png";
+  if (contentType === "image/webp") return ".webp";
+  if (contentType === "video/mp4") return ".mp4";
+  if (contentType === "video/quicktime") return ".mov";
+  return "";
+}
+
+function findAccount(accounts: PlatformAccount[], accountId: string): PlatformAccount {
+  const account = accounts.find((item) => item.account_id === accountId);
+  if (!account) throw new Error(`Account ${accountId} not found.`);
+  return account;
+}
+
+async function exportManualPublishPackage(clientId: string, variantId: string, taskId?: string) {
+  const client = await readJson<Client>(clientFile(clientId, "client.json"), null as unknown as Client);
+  const contents = await readClientArray<ContentAsset>(clientId, "content-pool.json");
+  const variants = await readClientArray<PlatformVariant>(clientId, "platform-variants.json");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const queue = await readClientArray<PublishTask>(clientId, "publish-queue.json");
+  const variant = variants.find((item) => item.variant_id === variantId);
+  if (!variant) throw new Error(`Variant ${variantId} not found.`);
+  const content = contents.find((item) => item.content_id === variant.content_id);
+  if (!content) throw new Error(`Content ${variant.content_id} not found.`);
+  const account = accounts.find((item) => item.account_id === variant.account_id);
+  if (!account) throw new Error(`Account ${variant.account_id} not found.`);
+  assertContentApproved(content);
+  assertVariantApproved(variant);
+  if (account.status !== "active") throw new Error(`Account ${account.account_id} is not active.`);
+  if (!account.posting_enabled) throw new Error(`Account ${account.account_id} has posting_enabled=false.`);
+  const task = taskId
+    ? queue.find((item) => item.publish_task_id === taskId)
+    : queue.find((item) => item.variant_id === variant.variant_id && item.status !== "cancelled");
+  const now = new Date().toISOString();
+  const exportDir = join(clientDir(clientId), "exports", variant.platform);
+  await mkdir(exportDir, { recursive: true });
+  const baseName = `manual-publish-${variant.platform}-${variant.variant_id}`;
+  const jsonPath = join(exportDir, `${baseName}.json`);
+  const mdPath = join(exportDir, `${baseName}.md`);
+  const relativeJsonPath = `data/clients/${clientId}/exports/${variant.platform}/${baseName}.json`;
+  const relativeMdPath = `data/clients/${clientId}/exports/${variant.platform}/${baseName}.md`;
+  const packageData = {
+    export_id: makeId("manual_export"),
+    generated_at: now,
+    mode: "manual_publish_export",
+    safety_notice: "Manual package only. No platform API request was made.",
+    client: {
+      client_id: client.client_id,
+      client_name: client.client_name,
+      industry: client.industry,
+      region: client.region
+    },
+    account: {
+      account_id: account.account_id,
+      platform: account.platform,
+      account_name: account.account_name,
+      display_name: account.display_name,
+      account_url: account.account_url,
+      language: account.language,
+      region: account.region,
+      account_role: account.account_role,
+      content_focus: account.content_focus,
+      auth_status: account.auth_status,
+      posting_enabled: account.posting_enabled
+    },
+    content: {
+      content_id: content.content_id,
+      title: content.title,
+      content_theme: content.content_theme,
+      content_angle: content.content_angle,
+      funnel_stage: content.funnel_stage,
+      approved_by_human: content.approved_by_human
+    },
+    variant: {
+      variant_id: variant.variant_id,
+      platform: variant.platform,
+      format: variant.format,
+      caption: variant.caption,
+      hashtags: variant.hashtags,
+      cta: variant.cta,
+      media_path: variant.media_path,
+      language: variant.language,
+      approval_status: variant.approval_status,
+      status: variant.status
+    },
+    publish_task: task ? {
+      publish_task_id: task.publish_task_id,
+      scheduled_at: task.scheduled_at,
+      status: task.status,
+      approval_status: task.approval_status
+    } : null,
+    manual_posting_checklist: [
+      "Confirm client_id and client name.",
+      "Confirm platform account and account URL.",
+      "Copy caption exactly or adjust only with human approval.",
+      "Copy hashtags and CTA.",
+      "Upload media asset if media_path is provided.",
+      "Publish manually on the native platform.",
+      "Copy the final platform post URL.",
+      "Paste post_url back into Social Ops Hub and mark manual complete."
+    ],
+    post_url_backfill_required: true
+  };
+  const markdown = [
+    `# Manual Publish Package`,
+    ``,
+    `Generated: ${now}`,
+    ``,
+    `> Manual workflow only. No API request was made.`,
+    ``,
+    `## Client`,
+    ``,
+    `- Client: ${client.client_name} (${client.client_id})`,
+    `- Industry: ${client.industry}`,
+    `- Region: ${client.region}`,
+    ``,
+    `## Account`,
+    ``,
+    `- Platform: ${account.platform}`,
+    `- Account: ${account.display_name || account.account_name} (${account.account_id})`,
+    `- URL: ${account.account_url || "-"}`,
+    `- Role: ${account.account_role}`,
+    `- Focus: ${account.content_focus}`,
+    ``,
+    `## Content`,
+    ``,
+    `- Title: ${content.title}`,
+    `- Theme: ${content.content_theme}`,
+    `- Funnel stage: ${content.funnel_stage}`,
+    `- Variant: ${variant.variant_id}`,
+    `- Format: ${variant.format}`,
+    ``,
+    `## Caption`,
+    ``,
+    variant.caption,
+    ``,
+    `## Hashtags`,
+    ``,
+    variant.hashtags.join(" "),
+    ``,
+    `## CTA`,
+    ``,
+    variant.cta,
+    ``,
+    `## Media`,
+    ``,
+    variant.media_path || "Text-only / no media path provided.",
+    ``,
+    `## Manual Posting Checklist`,
+    ``,
+    `- [ ] Confirm client.`,
+    `- [ ] Confirm platform account.`,
+    `- [ ] Copy caption.`,
+    `- [ ] Copy hashtags and CTA.`,
+    `- [ ] Upload media asset if available.`,
+    `- [ ] Publish manually on platform.`,
+    `- [ ] Copy final post URL.`,
+    `- [ ] Paste post URL back into Social Ops Hub.`,
+    ``
+  ].join("\n");
+  await writeFile(jsonPath, `${JSON.stringify(packageData, null, 2)}\n`, "utf8");
+  await writeFile(mdPath, markdown, "utf8");
+  await appendPublishAudit(clientId, makePublishAuditEntry({
+    event_type: "manual_export_created",
+    task,
+    variant,
+    message: "Manual publish package exported. No platform API request was made.",
+    publish_method: "manual",
+    publish_mode: "manual",
+    source: "web",
+    metadata: {
+      json_path: relativeJsonPath,
+      markdown_path: relativeMdPath
+    }
+  }));
+  return {
+    ok: true,
+    message: "Manual publish package exported. No API request was made.",
+    json_path: relativeJsonPath,
+    markdown_path: relativeMdPath,
+    platform: variant.platform,
+    account_id: account.account_id,
+    variant_id: variant.variant_id,
+    publish_task_id: task?.publish_task_id ?? null
+  };
+}
+
+async function markPublishTaskManualComplete(clientId: string, taskId: string, postUrl: string): Promise<void> {
+  if (!postUrl || !/^https?:\/\//i.test(postUrl)) throw new Error("A valid post_url starting with http:// or https:// is required.");
+  const queue = await readClientArray<PublishTask>(clientId, "publish-queue.json");
+  const records = await readClientArray<PublishRecord>(clientId, "publish-records.json");
+  const variants = await readClientArray<PlatformVariant>(clientId, "platform-variants.json");
+  const task = findPublishTask(queue, taskId);
+  if (task.status === "cancelled") throw new Error("Cancelled task cannot be marked completed.");
+  const variant = variants.find((item) => item.variant_id === task.variant_id);
+  if (!variant) throw new Error(`Variant ${task.variant_id} not found.`);
+  assertVariantApproved(variant);
+  const previousStatus = task.status;
+  const now = new Date().toISOString();
+  const manualPostId = `manual_${task.platform}_${task.publish_task_id}`;
+  task.status = "published";
+  task.platform_post_id = task.platform_post_id || manualPostId;
+  task.published_at = task.published_at || now;
+  task.error_message = null;
+  task.blocked_reason = null;
+  task.last_error = null;
+  task.next_retry_at = null;
+  task.updated_at = now;
+  const existingRecord = records.find((record) => record.publish_task_id === task.publish_task_id);
+  if (existingRecord) {
+    existingRecord.post_url = postUrl;
+    existingRecord.mock_url = existingRecord.mock_url || postUrl;
+    existingRecord.publish_mode = "manual";
+  } else {
+    records.push({
+      publish_record_id: makeId("record"),
+      publish_task_id: task.publish_task_id,
+      client_id: task.client_id,
+      content_id: task.content_id,
+      variant_id: task.variant_id,
+      platform: task.platform,
+      account_id: task.account_id,
+      platform_post_id: task.platform_post_id,
+      published_at: task.published_at,
+      status: "published",
+      publish_mode: "manual",
+      mock_url: postUrl,
+      post_url: postUrl
+    });
+  }
+  await writeClientArray(clientId, "publish-queue.json", queue);
+  await writeClientArray(clientId, "publish-records.json", records);
+  await appendPublishAudit(clientId, makePublishAuditEntry({
+    event_type: "manual_completed",
+    task,
+    variant,
+    message: "Operator backfilled a manually published post URL. No API call was made.",
+    status_before: previousStatus,
+    status_after: task.status,
+    platform_post_id: task.platform_post_id,
+    post_url: postUrl,
+    publish_method: "manual",
+    publish_mode: "manual",
+    source: "web"
+  }));
+}
+
+async function markXPublishTaskManualComplete(clientId: string, taskId: string): Promise<void> {
+  const queue = await readClientArray<PublishTask>(clientId, "publish-queue.json");
+  const records = await readClientArray<PublishRecord>(clientId, "publish-records.json");
+  const audit = await readClientArray<PublishAuditEntry>(clientId, "publish-audit-log.json");
+  const task = findPublishTask(queue, taskId);
+  if (task.platform !== "x") throw new Error("Manual completion is only available for X publish tasks in this workspace.");
+  if (task.status === "cancelled") throw new Error("Cancelled task cannot be marked completed.");
+  if (task.status === "published" || records.some((record) => record.publish_task_id === task.publish_task_id)) {
+    task.status = "published";
+    task.updated_at = new Date().toISOString();
+    await writeClientArray(clientId, "publish-queue.json", queue);
+    return;
+  }
+  const now = new Date().toISOString();
+  const manualPostId = `manual_${task.publish_task_id}`;
+  task.status = "published";
+  task.platform_post_id = manualPostId;
+  task.published_at = now;
+  task.error_message = null;
+  task.blocked_reason = null;
+  task.last_error = null;
+  task.next_retry_at = null;
+  task.updated_at = now;
+  records.push({
+    publish_record_id: makeId("record"),
+    publish_task_id: task.publish_task_id,
+    client_id: task.client_id,
+    content_id: task.content_id,
+    variant_id: task.variant_id,
+    platform: "x",
+    account_id: task.account_id,
+    platform_post_id: manualPostId,
+    published_at: now,
+    status: "published",
+    publish_mode: "manual",
+    mock_url: `manual://x/${task.publish_task_id}`,
+    post_url: null
+  });
+  audit.push(makePublishAuditEntry({
+    event_type: "manual_completed",
+    task,
+    variant_id: task.variant_id,
+    message: "Operator marked X task as manually published. No API call was made.",
+    status_before: "scheduled",
+    status_after: task.status,
+    platform_post_id: manualPostId,
+    publish_method: "manual",
+    publish_mode: "manual",
+    source: "web"
+  }));
+  await writeClientArray(clientId, "publish-queue.json", queue);
+  await writeClientArray(clientId, "publish-records.json", records);
+  await writeClientArray(clientId, "publish-audit-log.json", audit);
+}
+
+function makePublishAuditEntry(input: {
+  event_type: PublishAuditEntry["event_type"];
+  task?: PublishTask;
+  variant?: PlatformVariant;
+  variant_id?: string | null;
+  message: string;
+  reason?: string | null;
+  publish_method?: PublishAuditEntry["publish_method"];
+  publish_mode?: PublishAuditEntry["publish_mode"];
+  status_before?: PublishAuditEntry["status_before"];
+  status_after?: PublishAuditEntry["status_after"];
+  platform_post_id?: string | null;
+  post_url?: string | null;
+  source: PublishAuditEntry["source"];
+  actor?: PublishAuditEntry["actor"];
+  metadata?: Record<string, unknown>;
+}): PublishAuditEntry {
+  const task = input.task;
+  const variant = input.variant;
+  return {
+    audit_id: makeId("audit"),
+    timestamp: new Date().toISOString(),
+    event_type: input.event_type,
+    client_id: task?.client_id ?? variant?.client_id ?? "",
+    publish_task_id: task?.publish_task_id ?? null,
+    content_id: task?.content_id ?? variant?.content_id ?? null,
+    variant_id: task?.variant_id ?? variant?.variant_id ?? input.variant_id ?? null,
+    platform: task?.platform ?? variant?.platform ?? "meta",
+    account_id: task?.account_id ?? variant?.account_id ?? null,
+    publish_method: input.publish_method ?? task?.publish_method ?? null,
+    publish_mode: input.publish_mode ?? null,
+    status_before: input.status_before ?? null,
+    status_after: input.status_after ?? task?.status ?? null,
+    platform_post_id: input.platform_post_id ?? task?.platform_post_id ?? null,
+    post_url: input.post_url ?? null,
+    message: input.message,
+    reason: input.reason ?? null,
+    actor: input.actor ?? "operator",
+    source: input.source,
+    metadata: input.metadata
+  };
+}
+
+async function appendPublishAudit(clientId: string, entry: PublishAuditEntry): Promise<void> {
+  const audit = await readClientArray<PublishAuditEntry>(clientId, "publish-audit-log.json");
+  audit.push({ ...entry, client_id: entry.client_id || clientId });
+  await writeClientArray(clientId, "publish-audit-log.json", audit);
 }
 
 async function importLead(body: LeadImportRequest): Promise<void> {
@@ -1805,6 +2991,99 @@ function buildXBudgetSummary(client: Client, usage: XApiUsageEntry[]) {
   };
 }
 
+function buildMetaEnvStatus(config: Awaited<ReturnType<typeof readMetaFoundationConfig>>, env: Record<string, string>) {
+  return {
+    env_file: config.shared_meta_auth.env_file,
+    required_present: config.shared_meta_auth.required_env_vars.filter((name) => Boolean(env[name])),
+    required_missing: config.shared_meta_auth.required_env_vars.filter((name) => !env[name]),
+    optional_present: config.shared_meta_auth.optional_env_vars.filter((name) => Boolean(env[name])),
+    token_storage_policy: config.shared_meta_auth.token_storage_policy
+  };
+}
+
+async function readMetaManualExports(clientId: string) {
+  const platforms: Array<"facebook" | "instagram"> = ["facebook", "instagram"];
+  const result: Record<string, { path: string; exists: boolean; latest_files: string[] }> = {};
+  for (const platform of platforms) {
+    const relativePath = `data/clients/${clientId}/exports/${platform}/`;
+    const dir = join(clientDir(clientId), "exports", platform);
+    try {
+      const files = (await readdir(dir))
+        .filter((file) => !file.startsWith("."))
+        .sort()
+        .reverse()
+        .slice(0, 10);
+      result[platform] = { path: relativePath, exists: true, latest_files: files };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        result[platform] = { path: relativePath, exists: false, latest_files: [] };
+      } else {
+        throw error;
+      }
+    }
+  }
+  return result;
+}
+
+async function readManualExports(clientId: string) {
+  const result: Record<string, { path: string; exists: boolean; latest_files: string[] }> = {};
+  for (const platform of platforms) {
+    const relativePath = `data/clients/${clientId}/exports/${platform}/`;
+    const dir = join(clientDir(clientId), "exports", platform);
+    try {
+      const files = (await readdir(dir))
+        .filter((file) => !file.startsWith("."))
+        .sort()
+        .reverse()
+        .slice(0, 20);
+      result[platform] = { path: relativePath, exists: true, latest_files: files };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        result[platform] = { path: relativePath, exists: false, latest_files: [] };
+      } else {
+        throw error;
+      }
+    }
+  }
+  return result;
+}
+
+async function readReportStatus(clientId: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  const weekStart = startOfWeek(new Date()).toISOString().slice(0, 10);
+  const weekEnd = endOfWeek(new Date()).toISOString().slice(0, 10);
+  const dailyPath = join(clientDir(clientId), "reports", "daily", `${today}.json`);
+  const weeklyPath = join(clientDir(clientId), "reports", "weekly", `${weekStart}_${weekEnd}.json`);
+  const firstWeekPath = join(clientDir(clientId), "reports", "weekly", "first-week-operation-plan.md");
+  return {
+    today,
+    week_start: weekStart,
+    week_end: weekEnd,
+    daily: {
+      path: `data/clients/${clientId}/reports/daily/${today}.json`,
+      exists: await pathExists(dailyPath)
+    },
+    weekly: {
+      path: `data/clients/${clientId}/reports/weekly/${weekStart}_${weekEnd}.json`,
+      exists: await pathExists(weeklyPath)
+    },
+    first_week_plan: {
+      path: `data/clients/${clientId}/reports/weekly/first-week-operation-plan.md`,
+      exists: await pathExists(firstWeekPath)
+    }
+  };
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 async function readXReports(clientId: string, errors: Array<{ file: string; message: string }>): Promise<Array<Record<string, unknown>>> {
   const dir = join(clientDir(clientId), "reports", "x");
   try {
@@ -1862,6 +3141,45 @@ async function readBody<T>(req: IncomingMessage): Promise<T> {
 function sendJson(res: ServerResponse, status: number, value: unknown): void {
   res.writeHead(status, { "content-type": "application/json; charset=utf-8" });
   res.end(JSON.stringify(value));
+}
+
+function sendHtml(res: ServerResponse, status: number, html: string): void {
+  res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
+  res.end(html);
+}
+
+function renderOAuthResultHtml(title: string, message: string, clientId?: string): string {
+  const href = clientId ? `/?client_id=${encodeURIComponent(clientId)}` : "/";
+  return `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; color: #0f172a; padding: 48px; }
+      main { max-width: 720px; margin: 0 auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 28px; box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08); }
+      h1 { margin-top: 0; }
+      a { display: inline-block; margin-top: 16px; color: #0f766e; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${escapeHtml(title)}</h1>
+      <p>${message}</p>
+      <a href="${href}">返回 Social Ops Hub</a>
+    </main>
+  </body>
+</html>`;
+}
+
+function escapeHtml(value: string): string {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 function makeId(prefix: string): string {

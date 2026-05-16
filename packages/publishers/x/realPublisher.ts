@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { PlatformVariant, PublishTask } from "../../core/types.js";
 import { createMockPublisher } from "../mockPublisher.js";
 import type { Publisher, PublishResult } from "../types.js";
+import { readXUserToken } from "./accountAuth.js";
 
 interface XCredentials {
   apiKey: string;
@@ -28,7 +29,7 @@ export const xRealPublisher: Publisher = {
       };
     }
 
-    const credentials = await loadXCredentials();
+    const credentials = await loadXCredentials(task.account_id);
     if (!credentials) {
       return {
         ok: false,
@@ -67,7 +68,7 @@ function buildXPostText(variant: PlatformVariant): string {
   return text.length > 0 ? text : variant.caption.trim();
 }
 
-async function loadXCredentials(): Promise<XCredentials | null> {
+async function loadXCredentials(accountId?: string): Promise<XCredentials | null> {
   const values = {
     ...(await readEnvFile(".env.local")),
     ...(await readEnvFile("XAPI.env")),
@@ -75,8 +76,9 @@ async function loadXCredentials(): Promise<XCredentials | null> {
   };
   const apiKey = values.X_API_KEY;
   const apiKeySecret = values.X_API_KEY_SECRET;
-  const accessToken = values.X_ACCESS_TOKEN;
-  const accessTokenSecret = values.X_ACCESS_TOKEN_SECRET;
+  const accountToken = accountId ? await readXUserToken(accountId) : null;
+  const accessToken = accountToken?.access_token || values.X_ACCESS_TOKEN;
+  const accessTokenSecret = accountToken?.access_token_secret || values.X_ACCESS_TOKEN_SECRET;
   const dryRun = values.X_API_DRY_RUN !== "false";
 
   if (!apiKey || !apiKeySecret || !accessToken || !accessTokenSecret) {

@@ -14,12 +14,15 @@ import type {
   PlatformAccount,
   PlatformCapabilities,
   PlatformVariant,
+  PublishAuditEntry,
   PublishRecord,
   PublishTask,
   ReplyDraft,
   XEngagementItem,
+  XFollowAction,
   XKolProspect,
   XLeadCandidate,
+  XMediaPost,
   XPublicMetrics,
   XQueryHistoryEntry,
   XResearchPost
@@ -29,8 +32,27 @@ import { generateReplyDraft } from "../../packages/lead-intelligence/generateRep
 import { scoreLead, type LeadScoringRule } from "../../packages/lead-intelligence/scoreLead.js";
 import { facebookPublisher } from "../../packages/publishers/facebook/index.js";
 import { instagramPublisher } from "../../packages/publishers/instagram/index.js";
+import {
+  buildMetaDryRunPreview,
+  checkMetaAccount,
+  facebookGraphGet,
+  facebookGraphPost,
+  instagramGraphGet,
+  instagramGraphPost,
+  loadFacebookGraphConfig,
+  loadInstagramGraphConfig,
+  loadMetaEnv,
+  publishInstagramMedia,
+  readMetaFoundationConfig,
+  sendFacebookPageMessage,
+  sendInstagramDm,
+  type MetaMode
+} from "../../packages/publishers/meta/index.js";
 import { tiktokPublisher } from "../../packages/publishers/tiktok/index.js";
 import type { Publisher } from "../../packages/publishers/types.js";
+import { checkXAccountAuth, defaultXTokenRef } from "../../packages/publishers/x/accountAuth.js";
+import { refreshXOAuthToken } from "../../packages/publishers/x/oauth.js";
+import { followXUser } from "../../packages/publishers/x/follow.js";
 import { getXApiUsageStats, resetXApiUsageStats, xApiGet } from "../../packages/publishers/x/apiClient.js";
 import { xPublisher } from "../../packages/publishers/x/index.js";
 import {
@@ -176,8 +198,17 @@ async function main(): Promise<void> {
       return runE2EDemo();
     case "x:publish:test":
       return runXPublishTest();
+    case "x:account:check":
+      return xAccountCheck();
+    case "x:account:refresh":
+      return xAccountRefresh();
+    case "x:follow:run":
+      return xFollowRun();
     case "x:research:search":
       return xResearchSearch();
+    case "x:media:scan":
+    case "x:media:fetch":
+      return xMediaScan();
     case "x:kol:discover":
       return xKolDiscover();
     case "x:competitor:mine":
@@ -190,6 +221,50 @@ async function main(): Promise<void> {
       return xDmSync();
     case "x:report":
       return xReport();
+    case "meta:setup:status":
+      return metaSetupStatus();
+    case "meta:account:check":
+      return metaAccountCheck();
+    case "meta:publish:dry-run":
+      return metaPublishDryRun();
+    case "ig:account:check":
+      return igAccountCheck();
+    case "ig:publish:image":
+      return igPublishImage();
+    case "ig:publish:video":
+      return igPublishVideo();
+    case "ig:comments:list":
+      return igCommentsList();
+    case "ig:comment:reply":
+      return igCommentReply();
+    case "ig:private-reply":
+      return igPrivateReply();
+    case "ig:dm:send":
+      return igDmSend();
+    case "ig:like":
+      return igLike();
+    case "ig:follow:run":
+      return igFollowRun();
+    case "fb:account:check":
+      return fbAccountCheck();
+    case "fb:publish:post":
+      return fbPublishPost();
+    case "fb:publish:photo":
+      return fbPublishPhoto();
+    case "fb:publish:video":
+      return fbPublishVideo();
+    case "fb:comments:list":
+      return fbCommentsList();
+    case "fb:comment:reply":
+      return fbCommentReply();
+    case "fb:private-reply":
+      return fbPrivateReply();
+    case "fb:dm:send":
+      return fbDmSend();
+    case "fb:like":
+      return fbLike();
+    case "fb:follow:run":
+      return fbFollowRun();
     default:
       printHelp();
   }
@@ -253,6 +328,10 @@ function flagArg(name: string): boolean {
 
 function modeArg(): "mock" | "api" {
   return enumArg("mode", "mock", ["mock", "api"]);
+}
+
+function metaModeArg(): MetaMode {
+  return enumArg("mode", "dry_run", ["mock", "dry_run", "manual"]);
 }
 
 function enumArg<T extends string>(name: string, fallback: T, allowed: readonly T[]): T {
@@ -764,6 +843,7 @@ async function runPublishQueue(): Promise<void> {
   const contents = await readClientArray<ContentAsset>(clientId, "content-pool.json");
   const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
   const records = await readClientArray<PublishRecord>(clientId, "publish-records.json");
+  const audit = await readClientArray<PublishAuditEntry>(clientId, "publish-audit-log.json");
   const rules = await readPublishRules();
   const capabilities = await readPlatformCapabilities();
   const now = new Date();
@@ -794,9 +874,26 @@ async function runPublishQueue(): Promise<void> {
     const readiness = await checkPublishReadiness({ content, variant, account, queue, task, rules, capabilities, currentTaskId: task.publish_task_id });
     if (!readiness.ready) {
       blockTask(task, readiness.reason, readiness.needsManualReview);
+      audit.push(makePublishAuditEntry({
+        event_type: "publish_blocked",
+        task,
+        variant,
+        message: "Publish task blocked by readiness check.",
+        reason: readiness.reason,
+        status_before: "scheduled",
+        source: "cli"
+      }));
       continue;
     }
 
+    audit.push(makePublishAuditEntry({
+      event_type: "publish_attempt",
+      task,
+      variant,
+      message: "Publish attempt started.",
+      status_before: task.status,
+      source: "cli"
+    }));
     task.status = "publishing";
     task.updated_at = new Date().toISOString();
     if (!isPublishablePlatform(task.platform)) {
@@ -834,15 +931,38 @@ async function runPublishQueue(): Promise<void> {
         mock_url: result.mock_url ?? recordUrl,
         post_url: recordUrl
       });
+      audit.push(makePublishAuditEntry({
+        event_type: "publish_success",
+        task,
+        variant,
+        message: "Publish task completed and publish record appended.",
+        status_before: "scheduled",
+        status_after: task.status,
+        platform_post_id: task.platform_post_id,
+        post_url: recordUrl,
+        publish_mode: result.publish_mode ?? (task.publish_method === "official_api" ? "api" : "mock"),
+        source: "cli"
+      }));
       console.log(`[publish] success task=${task.publish_task_id} mode=${result.publish_mode ?? "mock"} post_id=${task.platform_post_id} url=${recordUrl}`);
     } else {
       registerPublishFailure(task, result.error_message ?? "Unknown publish error");
+      audit.push(makePublishAuditEntry({
+        event_type: "publish_failed",
+        task,
+        variant,
+        message: "Publish task failed.",
+        reason: task.last_error,
+        status_before: "scheduled",
+        status_after: task.status,
+        source: "cli"
+      }));
       console.log(`[publish] failed task=${task.publish_task_id} retries=${task.retry_count}/${task.max_retry} error=${task.last_error}`);
     }
   }
 
   await writeClientArray(clientId, "publish-queue.json", queue);
   await writeClientArray(clientId, "publish-records.json", records);
+  await writeClientArray(clientId, "publish-audit-log.json", audit);
   console.log(`Publish queue processed for ${clientId}`);
 }
 
@@ -1271,6 +1391,54 @@ function registerPublishFailure(task: PublishTask, message: string): void {
   task.updated_at = new Date().toISOString();
 }
 
+function makePublishAuditEntry(input: {
+  event_type: PublishAuditEntry["event_type"];
+  task?: PublishTask;
+  variant?: PlatformVariant;
+  message: string;
+  reason?: string | null;
+  publish_method?: PublishAuditEntry["publish_method"];
+  publish_mode?: PublishAuditEntry["publish_mode"];
+  status_before?: PublishAuditEntry["status_before"];
+  status_after?: PublishAuditEntry["status_after"];
+  platform_post_id?: string | null;
+  post_url?: string | null;
+  source: PublishAuditEntry["source"];
+  actor?: PublishAuditEntry["actor"];
+  metadata?: Record<string, unknown>;
+}): PublishAuditEntry {
+  const task = input.task;
+  const variant = input.variant;
+  return {
+    audit_id: id("audit"),
+    timestamp: new Date().toISOString(),
+    event_type: input.event_type,
+    client_id: task?.client_id ?? variant?.client_id ?? "",
+    publish_task_id: task?.publish_task_id ?? null,
+    content_id: task?.content_id ?? variant?.content_id ?? null,
+    variant_id: task?.variant_id ?? variant?.variant_id ?? null,
+    platform: task?.platform ?? variant?.platform ?? "meta",
+    account_id: task?.account_id ?? variant?.account_id ?? null,
+    publish_method: input.publish_method ?? task?.publish_method ?? null,
+    publish_mode: input.publish_mode ?? null,
+    status_before: input.status_before ?? null,
+    status_after: input.status_after ?? task?.status ?? null,
+    platform_post_id: input.platform_post_id ?? task?.platform_post_id ?? null,
+    post_url: input.post_url ?? null,
+    message: input.message,
+    reason: input.reason ?? null,
+    actor: input.actor ?? "cli",
+    source: input.source,
+    metadata: input.metadata
+  };
+}
+
+async function appendPublishAudit(clientId: string, entry: PublishAuditEntry): Promise<void> {
+  const audit = await readClientArray<PublishAuditEntry>(clientId, "publish-audit-log.json");
+  audit.push({ ...entry, client_id: entry.client_id || clientId });
+  await writeClientArray(clientId, "publish-audit-log.json", audit);
+}
+
 function findPublishTask(queue: PublishTask[], taskId: string): PublishTask {
   const task = queue.find((item) => item.publish_task_id === taskId);
   if (!task) throw new Error(`Publish task ${taskId} was not found.`);
@@ -1536,6 +1704,16 @@ async function seedDemo(): Promise<void> {
       status: "active",
       capability_override: { ...accountCapabilityOverride, can_read_comments: false },
       automation_settings: defaultAutomationSettings(),
+      meta_binding: {
+        instagram_business_account_id: "future_ig_user_id",
+        instagram_username: "maple_growth_demo",
+        connected_facebook_page_id: "future_page_id",
+        connected_facebook_page_name: "Maple Growth Facebook Page",
+        permissions: ["instagram_basic", "instagram_content_publish", "instagram_manage_comments", "pages_show_list", "pages_read_engagement"],
+        token_status: "not_configured",
+        setup_status: "ready_for_mock",
+        setup_notes: ["Phase 1 demo binding only. No Meta Graph API calls are made."]
+      },
       notes: "Demo override: comments are manual import only.",
       created_at: now,
       updated_at: now
@@ -1578,6 +1756,14 @@ async function seedDemo(): Promise<void> {
       status: "active",
       capability_override: { ...accountCapabilityOverride, can_read_dm: false },
       automation_settings: defaultAutomationSettings(),
+      meta_binding: {
+        page_id: "future_page_id",
+        page_name: "Maple Growth Facebook Page",
+        permissions: ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "pages_manage_metadata"],
+        token_status: "not_configured",
+        setup_status: "ready_for_mock",
+        setup_notes: ["Phase 1 demo binding only. No Meta Graph API calls are made."]
+      },
       notes: "Demo override: Page posting enabled, DMs manual.",
       created_at: now,
       updated_at: now
@@ -1983,6 +2169,243 @@ async function xResearchSearch(): Promise<void> {
   console.log(`[x:research] mode=${mode} saved=${posts.length} total=${merged.length} estimated_cost=${usage.estimatedCost} api_calls=${usage.apiCalls} cache_hits=${usage.cacheHits}`);
 }
 
+async function xMediaScan(): Promise<void> {
+  const clientId = arg("client_id");
+  const client = await readClient(clientId);
+  const mode = modeArg();
+  const username = normalizeXUsername(arg("username"));
+  if (!args.max_results && typeof args.limit === "string") args.max_results = args.limit;
+  const maxResults = boundedXPostLimit("max_results", client.default_x_search_limit ?? 30);
+  const maxVideoSeconds = Math.max(1, Number(arg("max_video_seconds", "180")));
+  const budget = await guardXApiReadCommand(client, mode, estimateXReadCost("media", maxResults));
+  if (await handleEstimateOnly(clientId, "x:media:scan", mode, [`from:${username} has:media`], maxResults, "x-media-posts.json", budget, username)) return;
+
+  resetXApiUsageStats();
+  const profile = await fetchXUserProfile(clientId, mode, username);
+  const posts = await fetchXUserMediaPosts(clientId, mode, profile.user_id, profile.username, maxResults, maxVideoSeconds);
+  const existing = await readClientArray<XMediaPost>(clientId, "x-media-posts.json");
+  const merged = mergeBy(existing, posts, (post) => post.media_post_id);
+  await writeClientArray(clientId, "x-media-posts.json", merged);
+  await appendXQueryHistory(clientId, {
+    command: "x:media:scan",
+    mode,
+    keywords: [`from:${username} has:media`, `max_video_seconds:${maxVideoSeconds}`],
+    username,
+    requested_limit: maxResults,
+    returned_count: posts.length,
+    saved_count: posts.length,
+    result_ids: posts.map((post) => post.post_id),
+    result_file: "x-media-posts.json"
+  });
+  const usage = getXApiUsageStats();
+  const photoCount = posts.filter((post) => post.has_photo).length;
+  const videoCount = posts.filter((post) => post.has_video).length;
+  const shortVideoCount = posts.filter((post) => post.has_video_under_limit).length;
+  console.log(`[x:media] mode=${mode} username=${username} saved=${posts.length} total=${merged.length} photos=${photoCount} videos=${videoCount} short_videos=${shortVideoCount} max_video_seconds_reference=${maxVideoSeconds} estimated_cost=${usage.estimatedCost} api_calls=${usage.apiCalls} cache_hits=${usage.cacheHits}`);
+}
+
+async function xAccountCheck(): Promise<void> {
+  const clientId = arg("client_id");
+  const accountId = arg("account_id");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const account = findAccount(accounts, accountId);
+  if (account.platform !== "x") throw new Error(`Account ${accountId} is ${account.platform}, not x.`);
+  let auth = await checkXAccountAuth(account);
+  if (auth.token_status === "expired" && !flagArg("no_refresh")) {
+    await refreshXOAuthToken({ clientId, accountId });
+    const refreshedAccounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+    const refreshedAccount = findAccount(refreshedAccounts, accountId);
+    auth = await checkXAccountAuth(refreshedAccount);
+  }
+  account.x_binding = {
+    ...(account.x_binding ?? {}),
+    x_username: auth.x_username ?? account.x_binding?.x_username ?? account.account_name,
+    token_ref: auth.token_ref,
+    token_status: auth.token_status,
+    scopes: auth.scopes,
+    oauth_version: account.x_binding?.oauth_version ?? "2.0",
+    last_checked_at: new Date().toISOString(),
+    setup_status: auth.setup_status,
+    setup_notes: auth.notes
+  };
+  account.auth_status = auth.token_status === "configured" ? "connected" : auth.token_status === "expired" ? "expired" : "disconnected";
+  account.updated_at = new Date().toISOString();
+  await writeClientArray(clientId, "accounts.json", accounts);
+  console.log(JSON.stringify(auth, null, 2));
+}
+
+async function xFollowRun(): Promise<void> {
+  const clientId = arg("client_id");
+  const mode = modeArg();
+  const accountId = arg("account_id", "");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const account = accountId ? findAccount(accounts, accountId) : await findXAccount(clientId);
+  if (account.platform !== "x") throw new Error(`Account ${account.account_id} is ${account.platform}, not x.`);
+
+  const target = await resolveXFollowTarget(clientId, mode);
+  const source = await resolveXFollowSource(clientId);
+  const now = new Date().toISOString();
+  const action: XFollowAction = {
+    follow_action_id: id("xfollow"),
+    client_id: clientId,
+    platform: "x",
+    account_id: account.account_id,
+    source_type: source.sourceType,
+    source_id: source.sourceId,
+    target_user_id: target.user_id,
+    target_username: target.username,
+    target_display_name: target.display_name,
+    target_profile_url: `https://x.com/${target.username}`,
+    approval_status: source.approvalStatus,
+    status: "suggested",
+    mode,
+    confirmed_live: arg("confirm", "") === "LIVE",
+    blocked_reason: null,
+    error_message: null,
+    x_following: null,
+    requested_at: now,
+    completed_at: null,
+    created_at: now,
+    updated_at: now
+  };
+
+  const audit = await readClientArray<PublishAuditEntry>(clientId, "publish-audit-log.json");
+  const actions = await readClientArray<XFollowAction>(clientId, "x-follow-actions.json");
+  const blockReason = await getXFollowBlockReason(account, action, mode);
+  if (blockReason) {
+    action.status = "blocked";
+    action.blocked_reason = blockReason;
+    action.updated_at = new Date().toISOString();
+    actions.push(action);
+    audit.push(makeAutomationAuditEntry("automation_blocked", action, blockReason));
+    await writeClientArray(clientId, "x-follow-actions.json", actions);
+    await writeClientArray(clientId, "publish-audit-log.json", audit);
+    console.log(`[x:follow] blocked account=${account.account_id} target=@${target.username}: ${blockReason}`);
+    return;
+  }
+
+  audit.push(makeAutomationAuditEntry("automation_attempt", action, "X follow attempt started."));
+  if (mode === "mock") {
+    action.status = "mock_completed";
+    action.x_following = true;
+    action.completed_at = new Date().toISOString();
+    action.updated_at = action.completed_at;
+    actions.push(action);
+    audit.push(makeAutomationAuditEntry("automation_success", action, "Mock X follow completed."));
+    await writeClientArray(clientId, "x-follow-actions.json", actions);
+    await writeClientArray(clientId, "publish-audit-log.json", audit);
+    console.log(`[x:follow] mock_completed account=${account.account_id} target=@${target.username} action=${action.follow_action_id}`);
+    return;
+  }
+
+  const result = await followXUser(defaultXTokenRef(account), { user_id: target.user_id, username: target.username });
+  action.status = result.ok ? "completed" : "failed";
+  action.x_following = result.following;
+  action.error_message = result.error_message;
+  action.completed_at = new Date().toISOString();
+  action.updated_at = action.completed_at;
+  actions.push(action);
+  audit.push(makeAutomationAuditEntry(result.ok ? "automation_success" : "automation_failed", action, result.error_message ?? "X follow completed."));
+  await writeClientArray(clientId, "x-follow-actions.json", actions);
+  await writeClientArray(clientId, "publish-audit-log.json", audit);
+  console.log(`[x:follow] ${action.status} account=${account.account_id} target=@${target.username} action=${action.follow_action_id}${action.error_message ? ` error=${action.error_message}` : ""}`);
+}
+
+async function resolveXFollowTarget(clientId: string, mode: "mock" | "api"): Promise<{ user_id: string; username: string; display_name: string | null }> {
+  const prospectId = nullableArg("prospect_id");
+  if (prospectId) {
+    const prospects = await readClientArray<XKolProspect>(clientId, "kol-prospects.json");
+    const prospect = prospects.find((item) => item.prospect_id === prospectId);
+    if (!prospect) throw new Error(`KOL prospect ${prospectId} was not found.`);
+    return { user_id: prospect.user_id, username: prospect.username, display_name: prospect.display_name };
+  }
+  const candidateId = nullableArg("candidate_id");
+  if (candidateId) {
+    const candidates = await readClientArray<XLeadCandidate>(clientId, "lead-candidates.json");
+    const candidate = candidates.find((item) => item.candidate_id === candidateId);
+    if (!candidate) throw new Error(`Lead candidate ${candidateId} was not found.`);
+    return { user_id: candidate.user_id, username: candidate.username, display_name: candidate.display_name };
+  }
+  const targetUserId = nullableArg("target_user_id");
+  const username = nullableArg("username")?.replace(/^@/, "");
+  if (targetUserId && username) return { user_id: targetUserId, username, display_name: null };
+  if (username) {
+    if (mode === "mock") return { user_id: `mock_user_${username}`, username, display_name: username };
+    const profile = await fetchXUserProfile(clientId, mode, username);
+    return { user_id: profile.user_id, username: profile.username, display_name: profile.display_name };
+  }
+  throw new Error("Provide --prospect_id, --candidate_id, or --username with optional --target_user_id.");
+}
+
+async function resolveXFollowSource(clientId: string): Promise<{ sourceType: XFollowAction["source_type"]; sourceId: string | null; approvalStatus: XFollowAction["approval_status"] }> {
+  const prospectId = nullableArg("prospect_id");
+  if (prospectId) {
+    const prospects = await readClientArray<XKolProspect>(clientId, "kol-prospects.json");
+    const prospect = prospects.find((item) => item.prospect_id === prospectId);
+    if (!prospect) throw new Error(`KOL prospect ${prospectId} was not found.`);
+    return { sourceType: "kol_prospect", sourceId: prospectId, approvalStatus: prospect.prospect_status };
+  }
+  const candidateId = nullableArg("candidate_id");
+  if (candidateId) {
+    const candidates = await readClientArray<XLeadCandidate>(clientId, "lead-candidates.json");
+    const candidate = candidates.find((item) => item.candidate_id === candidateId);
+    if (!candidate) throw new Error(`Lead candidate ${candidateId} was not found.`);
+    return { sourceType: "lead_candidate", sourceId: candidateId, approvalStatus: candidate.candidate_status };
+  }
+  return { sourceType: "manual", sourceId: null, approvalStatus: flagArg("approved") ? "approved" : "suggested" };
+}
+
+async function getXFollowBlockReason(account: PlatformAccount, action: XFollowAction, mode: "mock" | "api"): Promise<string | null> {
+  if (account.status !== "active") return `Account ${account.account_id} is not active.`;
+  if (account.auth_status !== "connected" && mode === "api") return `Account ${account.account_id} auth_status must be connected for live follow.`;
+  if (account.automation_settings?.auto_follow_enabled !== true) return `Account ${account.account_id} automation_settings.auto_follow_enabled must be true.`;
+  if (!isApprovedAutomationStatus(action.approval_status)) return "Follow target must be approved before automation.";
+  if (mode === "api" && !action.confirmed_live) return "Live X follow requires --confirm LIVE.";
+  if (mode === "api") {
+    const auth = await checkXAccountAuth(account);
+    if (!auth.can_follow_as_user) return `Account ${account.account_id} cannot follow as user. Missing scopes: ${auth.missing_scopes.join(", ") || "unknown"}.`;
+  }
+  return null;
+}
+
+function isApprovedAutomationStatus(status: XFollowAction["approval_status"]): boolean {
+  return status === "approved" || status === "automated_allowed";
+}
+
+function makeAutomationAuditEntry(eventType: PublishAuditEntry["event_type"], action: XFollowAction, message: string): PublishAuditEntry {
+  return {
+    audit_id: id("audit"),
+    timestamp: new Date().toISOString(),
+    event_type: eventType,
+    client_id: action.client_id,
+    publish_task_id: null,
+    content_id: null,
+    variant_id: null,
+    platform: "x",
+    account_id: action.account_id,
+    publish_method: null,
+    publish_mode: action.mode === "api" ? "api" : "mock",
+    status_before: null,
+    status_after: action.status === "mock_completed" ? "published" : action.status === "completed" ? "published" : action.status === "failed" ? "failed" : action.status === "blocked" ? "blocked" : null,
+    platform_post_id: null,
+    post_url: action.target_profile_url,
+    message,
+    reason: action.blocked_reason ?? action.error_message,
+    actor: "cli",
+    source: "cli",
+    metadata: { automation_action: "x_follow", follow_action_id: action.follow_action_id, target_user_id: action.target_user_id, target_username: action.target_username, source_type: action.source_type, source_id: action.source_id }
+  };
+}
+
+
+
+async function xAccountRefresh(): Promise<void> {
+  const clientId = arg("client_id");
+  const accountId = arg("account_id");
+  const result = await refreshXOAuthToken({ clientId, accountId });
+  console.log(JSON.stringify(result, null, 2));
+}
+
 async function xKolDiscover(): Promise<void> {
   const clientId = arg("client_id");
   const client = await readClient(clientId);
@@ -2227,12 +2650,407 @@ async function xReport(): Promise<void> {
     recommended_next_actions: [
       "Review high-score lead candidates before replying.",
       "Approve or reject pending X reply drafts manually.",
-      "Move promising KOL prospects to outreach planning; do not auto-follow or auto-DM in Phase 1."
+      "Move promising KOL prospects to outreach planning. X auto-follow is available only through the gated x:follow:run workflow; do not auto-DM."
     ]
   };
   const reportPath = join(clientDir(clientId), "reports", "x", `${date}.json`);
   await writeJson(reportPath, report);
   console.log(`[x:report] written ${reportPath} estimated_cost=0 api_calls=0 cache_hits=0`);
+}
+
+async function metaSetupStatus(): Promise<void> {
+  const config = await readMetaFoundationConfig();
+  const env = await loadMetaEnv();
+  console.log(JSON.stringify({
+    phase: config.phase,
+    graph_api_version: env.META_GRAPH_API_VERSION || config.graph_api_version,
+    safety_rules: config.safety_rules,
+    env: {
+      env_file: config.shared_meta_auth.env_file,
+      required_present: config.shared_meta_auth.required_env_vars.filter((name) => Boolean(env[name])),
+      required_missing: config.shared_meta_auth.required_env_vars.filter((name) => !env[name]),
+      optional_present: config.shared_meta_auth.optional_env_vars.filter((name) => Boolean(env[name])),
+      token_storage_policy: config.shared_meta_auth.token_storage_policy
+    },
+    facebook: {
+      required_account_binding: config.facebook.required_account_binding,
+      recommended_permissions: config.facebook.recommended_permissions,
+      phase_1_workflows: config.facebook.phase_1_workflows
+    },
+    instagram: {
+      required_account_binding: config.instagram.required_account_binding,
+      recommended_permissions: config.instagram.recommended_permissions,
+      phase_1_workflows: config.instagram.phase_1_workflows
+    }
+  }, null, 2));
+}
+
+async function metaAccountCheck(): Promise<void> {
+  const clientId = arg("client_id");
+  const accountId = arg("account_id");
+  const mode = metaModeArg();
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const account = findAccount(accounts, accountId);
+  const result = await checkMetaAccount(account, mode);
+  account.meta_binding = {
+    ...(account.meta_binding ?? {}),
+    setup_status: result.ok ? "ready_for_dry_run" : "needs_meta_setup",
+    last_checked_at: new Date().toISOString(),
+    setup_notes: [...result.warnings, ...result.next_steps]
+  };
+  await writeClientArray(clientId, "accounts.json", accounts);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function metaPublishDryRun(): Promise<void> {
+  const clientId = arg("client_id");
+  const variantId = arg("variant_id");
+  const taskId = nullableArg("publish_task_id");
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const variants = await readClientArray<PlatformVariant>(clientId, "platform-variants.json");
+  const queue = await readClientArray<PublishTask>(clientId, "publish-queue.json");
+  const variant = variants.find((item) => item.variant_id === variantId);
+  if (!variant) throw new Error(`Variant ${variantId} not found.`);
+  if (variant.platform !== "facebook" && variant.platform !== "instagram") {
+    throw new Error(`Meta dry-run only supports facebook or instagram variants. Received ${variant.platform}.`);
+  }
+  const account = findAccount(accounts, variant.account_id);
+  const task = taskId ? findPublishTask(queue, taskId) : queue.find((item) => item.variant_id === variant.variant_id);
+  const preview = await buildMetaDryRunPreview({ account, variant, task });
+  console.log(JSON.stringify(preview, null, 2));
+  console.log("[meta:publish:dry-run] No Meta Graph API request was made. No Facebook/Instagram post was created.");
+}
+
+
+async function igAccountCheck(): Promise<void> {
+  const clientId = arg("client_id");
+  const account = await findInstagramAccount(clientId, nullableArg("account_id"));
+  const config = await loadInstagramGraphConfig(account);
+  const checks = {
+    account_id: account.account_id,
+    account_name: account.account_name,
+    auth_status: account.auth_status,
+    ig_user_id: config.igUserId,
+    page_id: config.pageId,
+    graph_version: config.graphVersion,
+    has_access_token: Boolean(config.accessToken),
+    has_page_access_token: Boolean(config.pageAccessToken),
+    automation_settings: account.automation_settings ?? defaultAutomationSettings(),
+    meta_binding: account.meta_binding ?? null
+  };
+  if (config.igUserId && config.accessToken && flagArg("live_probe")) {
+    const profile = await instagramGraphGet(`/${config.igUserId}`, { fields: "id,username,name,profile_picture_url" }, config.accessToken);
+    console.log(JSON.stringify({ ...checks, live_profile: profile }, null, 2));
+    return;
+  }
+  console.log(JSON.stringify(checks, null, 2));
+}
+
+async function igPublishImage(): Promise<void> {
+  assertLiveConfirm("Live Instagram image publish requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findInstagramAccount(clientId, nullableArg("account_id"));
+  const config = await loadInstagramGraphConfig(account);
+  const igUserId = arg("ig_user_id", config.igUserId ?? "");
+  if (!igUserId) throw new Error("Instagram business account id missing. Set META_IG_USER_ID or account.meta_binding.instagram_business_account_id.");
+  const result = await publishInstagramMedia({
+    igUserId,
+    imageUrl: arg("image_url"),
+    caption: arg("caption", "")
+  }, config.accessToken);
+  await appendPublishAudit(clientId, makeInstagramAutomationAudit("automation_success", account, "ig_publish_image", `Instagram image published: ${result.media_id}`, { media_id: result.media_id, creation_id: result.creation_id }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function igPublishVideo(): Promise<void> {
+  assertLiveConfirm("Live Instagram video publish requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findInstagramAccount(clientId, nullableArg("account_id"));
+  const config = await loadInstagramGraphConfig(account);
+  const igUserId = arg("ig_user_id", config.igUserId ?? "");
+  if (!igUserId) throw new Error("Instagram business account id missing. Set META_IG_USER_ID or account.meta_binding.instagram_business_account_id.");
+  const mediaType = enumArg("media_type", "REELS", ["VIDEO", "REELS", "STORIES"] as const);
+  const result = await publishInstagramMedia({
+    igUserId,
+    videoUrl: arg("video_url"),
+    caption: arg("caption", ""),
+    mediaType
+  }, config.accessToken);
+  await appendPublishAudit(clientId, makeInstagramAutomationAudit("automation_success", account, "ig_publish_video", `Instagram video published: ${result.media_id}`, { media_id: result.media_id, creation_id: result.creation_id, media_type: mediaType }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function igCommentsList(): Promise<void> {
+  const clientId = arg("client_id");
+  const account = await findInstagramAccount(clientId, nullableArg("account_id"));
+  const config = await loadInstagramGraphConfig(account);
+  const mediaId = arg("media_id");
+  const result = await instagramGraphGet(`/${mediaId}/comments`, {
+    fields: "id,text,username,timestamp,like_count,replies{id,text,username,timestamp,like_count}",
+    limit: arg("limit", "50")
+  }, config.accessToken);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function igCommentReply(): Promise<void> {
+  assertLiveConfirm("Live Instagram comment reply requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findInstagramAccount(clientId, nullableArg("account_id"));
+  const config = await loadInstagramGraphConfig(account);
+  const commentId = arg("comment_id");
+  const result = await instagramGraphPost(`/${commentId}/replies`, { message: arg("message") }, config.accessToken);
+  await appendPublishAudit(clientId, makeInstagramAutomationAudit("automation_success", account, "ig_comment_reply", `Instagram comment replied: ${commentId}`, { comment_id: commentId, result }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function igPrivateReply(): Promise<void> {
+  assertLiveConfirm("Live Instagram private reply requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findInstagramAccount(clientId, nullableArg("account_id"));
+  const config = await loadInstagramGraphConfig(account);
+  const commentId = arg("comment_id");
+  const result = await instagramGraphPost(`/${commentId}/private_replies`, { message: arg("message") }, config.accessToken);
+  await appendPublishAudit(clientId, makeInstagramAutomationAudit("automation_success", account, "ig_private_reply", `Instagram private reply sent for comment: ${commentId}`, { comment_id: commentId, result }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function igDmSend(): Promise<void> {
+  assertLiveConfirm("Live Instagram DM send requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findInstagramAccount(clientId, nullableArg("account_id"));
+  const config = await loadInstagramGraphConfig(account);
+  const pageId = arg("page_id", config.pageId ?? "");
+  if (!pageId) throw new Error("Connected Facebook Page id missing. Set META_PAGE_ID or account.meta_binding.connected_facebook_page_id.");
+  const result = await sendInstagramDm(pageId, arg("recipient_id"), arg("message"), config.pageAccessToken);
+  await appendPublishAudit(clientId, makeInstagramAutomationAudit("automation_success", account, "ig_dm_send", "Instagram DM sent.", { recipient_id: arg("recipient_id"), result }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function igLike(): Promise<void> {
+  assertLiveConfirm("Live Instagram like requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findInstagramAccount(clientId, nullableArg("account_id"));
+  const config = await loadInstagramGraphConfig(account);
+  const objectId = arg("object_id");
+  const result = await instagramGraphPost(`/${objectId}/likes`, {}, config.accessToken);
+  await appendPublishAudit(clientId, makeInstagramAutomationAudit("automation_success", account, "ig_like", `Instagram like attempted for ${objectId}.`, { object_id: objectId, result }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function igFollowRun(): Promise<void> {
+  const clientId = arg("client_id");
+  const account = await findInstagramAccount(clientId, nullableArg("account_id"));
+  await appendPublishAudit(clientId, makeInstagramAutomationAudit("automation_blocked", account, "ig_follow", "Instagram follow is not exposed by the official Meta Instagram Graph API.", { target_username: nullableArg("username") }));
+  throw new Error("Instagram follow/unfollow is not supported by the official Meta Instagram Graph API. I will not use private/mobile automation for this because it risks account restriction.");
+}
+
+async function findInstagramAccount(clientId: string, accountId: string | null): Promise<PlatformAccount> {
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const account = accountId ? findAccount(accounts, accountId) : accounts.find((item) => item.platform === "instagram" && item.status === "active");
+  if (!account) throw new Error(`No Instagram account found for ${clientId}.`);
+  if (account.platform !== "instagram") throw new Error(`Account ${account.account_id} is ${account.platform}, not instagram.`);
+  return account;
+}
+
+function assertLiveConfirm(message: string): void {
+  if (arg("confirm", "") !== "LIVE") throw new Error(message);
+}
+
+function makeInstagramAutomationAudit(eventType: PublishAuditEntry["event_type"], account: PlatformAccount, action: string, message: string, metadata: Record<string, unknown>): PublishAuditEntry {
+  return {
+    audit_id: id("audit"),
+    timestamp: new Date().toISOString(),
+    event_type: eventType,
+    client_id: account.client_id,
+    publish_task_id: null,
+    content_id: null,
+    variant_id: null,
+    platform: "instagram",
+    account_id: account.account_id,
+    publish_method: null,
+    publish_mode: "api",
+    status_before: null,
+    status_after: eventType === "automation_blocked" ? "blocked" : "published",
+    platform_post_id: typeof metadata.media_id === "string" ? metadata.media_id : null,
+    post_url: null,
+    message,
+    reason: eventType === "automation_blocked" ? message : null,
+    actor: "cli",
+    source: "cli",
+    metadata: { automation_action: action, ...metadata }
+  };
+}
+
+async function fbAccountCheck(): Promise<void> {
+  const clientId = arg("client_id");
+  const account = await findFacebookAccount(clientId, nullableArg("account_id"));
+  const config = await loadFacebookGraphConfig(account);
+  const checks = {
+    account_id: account.account_id,
+    account_name: account.account_name,
+    auth_status: account.auth_status,
+    page_id: config.pageId,
+    graph_version: config.graphVersion,
+    has_access_token: Boolean(config.accessToken),
+    has_page_access_token: Boolean(config.pageAccessToken),
+    automation_settings: account.automation_settings ?? defaultAutomationSettings(),
+    meta_binding: account.meta_binding ?? null
+  };
+  if (config.pageId && config.pageAccessToken && flagArg("live_probe")) {
+    const profile = await facebookGraphGet(`/${config.pageId}`, { fields: "id,name,link,fan_count,followers_count" }, config.pageAccessToken);
+    console.log(JSON.stringify({ ...checks, live_profile: profile }, null, 2));
+    return;
+  }
+  console.log(JSON.stringify(checks, null, 2));
+}
+
+async function fbPublishPost(): Promise<void> {
+  assertLiveConfirm("Live Facebook Page post requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findFacebookAccount(clientId, nullableArg("account_id"));
+  const config = await loadFacebookGraphConfig(account);
+  const pageId = arg("page_id", config.pageId ?? "");
+  if (!pageId) throw new Error("Facebook Page id missing. Set META_PAGE_ID or account.meta_binding.page_id.");
+  const result = await facebookGraphPost(`/${pageId}/feed`, {
+    message: arg("message"),
+    link: nullableArg("link") ?? undefined
+  }, config.pageAccessToken);
+  await appendPublishAudit(clientId, makeFacebookAutomationAudit("automation_success", account, "fb_publish_post", "Facebook Page post published.", { result, post_id: result.id }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function fbPublishPhoto(): Promise<void> {
+  assertLiveConfirm("Live Facebook Page photo publish requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findFacebookAccount(clientId, nullableArg("account_id"));
+  const config = await loadFacebookGraphConfig(account);
+  const pageId = arg("page_id", config.pageId ?? "");
+  if (!pageId) throw new Error("Facebook Page id missing. Set META_PAGE_ID or account.meta_binding.page_id.");
+  const result = await facebookGraphPost(`/${pageId}/photos`, {
+    url: arg("image_url"),
+    caption: arg("caption", "")
+  }, config.pageAccessToken);
+  await appendPublishAudit(clientId, makeFacebookAutomationAudit("automation_success", account, "fb_publish_photo", "Facebook Page photo published.", { result, post_id: result.post_id, photo_id: result.id }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function fbPublishVideo(): Promise<void> {
+  assertLiveConfirm("Live Facebook Page video publish requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findFacebookAccount(clientId, nullableArg("account_id"));
+  const config = await loadFacebookGraphConfig(account);
+  const pageId = arg("page_id", config.pageId ?? "");
+  if (!pageId) throw new Error("Facebook Page id missing. Set META_PAGE_ID or account.meta_binding.page_id.");
+  const result = await facebookGraphPost(`/${pageId}/videos`, {
+    file_url: arg("video_url"),
+    description: arg("description", arg("caption", ""))
+  }, config.pageAccessToken);
+  await appendPublishAudit(clientId, makeFacebookAutomationAudit("automation_success", account, "fb_publish_video", "Facebook Page video published.", { result, video_id: result.id }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function fbCommentsList(): Promise<void> {
+  const clientId = arg("client_id");
+  const account = await findFacebookAccount(clientId, nullableArg("account_id"));
+  const config = await loadFacebookGraphConfig(account);
+  const objectId = arg("object_id");
+  const result = await facebookGraphGet(`/${objectId}/comments`, {
+    fields: "id,message,from,created_time,like_count,comment_count,attachment,comments{id,message,from,created_time,like_count}",
+    limit: arg("limit", "50")
+  }, config.pageAccessToken);
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function fbCommentReply(): Promise<void> {
+  assertLiveConfirm("Live Facebook comment reply requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findFacebookAccount(clientId, nullableArg("account_id"));
+  const config = await loadFacebookGraphConfig(account);
+  const commentId = arg("comment_id");
+  const result = await facebookGraphPost(`/${commentId}/comments`, { message: arg("message") }, config.pageAccessToken);
+  await appendPublishAudit(clientId, makeFacebookAutomationAudit("automation_success", account, "fb_comment_reply", `Facebook comment replied: ${commentId}`, { comment_id: commentId, result }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function fbPrivateReply(): Promise<void> {
+  assertLiveConfirm("Live Facebook private reply requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findFacebookAccount(clientId, nullableArg("account_id"));
+  const config = await loadFacebookGraphConfig(account);
+  const commentId = arg("comment_id");
+  const result = await facebookGraphPost(`/${commentId}/private_replies`, { message: arg("message") }, config.pageAccessToken);
+  await appendPublishAudit(clientId, makeFacebookAutomationAudit("automation_success", account, "fb_private_reply", `Facebook private reply sent for comment: ${commentId}`, { comment_id: commentId, result }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function fbDmSend(): Promise<void> {
+  assertLiveConfirm("Live Facebook Page DM send requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findFacebookAccount(clientId, nullableArg("account_id"));
+  const config = await loadFacebookGraphConfig(account);
+  const pageId = arg("page_id", config.pageId ?? "");
+  if (!pageId) throw new Error("Facebook Page id missing. Set META_PAGE_ID or account.meta_binding.page_id.");
+  const result = await sendFacebookPageMessage(pageId, arg("recipient_id"), arg("message"), config.pageAccessToken);
+  await appendPublishAudit(clientId, makeFacebookAutomationAudit("automation_success", account, "fb_dm_send", "Facebook Page DM sent.", { recipient_id: arg("recipient_id"), result }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function fbLike(): Promise<void> {
+  assertLiveConfirm("Live Facebook like requires --confirm LIVE.");
+  const clientId = arg("client_id");
+  const account = await findFacebookAccount(clientId, nullableArg("account_id"));
+  const config = await loadFacebookGraphConfig(account);
+  const objectId = arg("object_id");
+  const result = await facebookGraphPost(`/${objectId}/likes`, {}, config.pageAccessToken);
+  await appendPublishAudit(clientId, makeFacebookAutomationAudit("automation_success", account, "fb_like", `Facebook like attempted for ${objectId}.`, { object_id: objectId, result }));
+  console.log(JSON.stringify(result, null, 2));
+}
+
+async function fbFollowRun(): Promise<void> {
+  const clientId = arg("client_id");
+  const account = await findFacebookAccount(clientId, nullableArg("account_id"));
+  await appendPublishAudit(clientId, makeFacebookAutomationAudit("automation_blocked", account, "fb_follow", "Facebook user follow is not exposed for Page automation by the official Meta Graph API.", { target_id: nullableArg("target_id") }));
+  throw new Error("Facebook user follow/unfollow is not supported for Page automation by the official Meta Graph API.");
+}
+
+async function findFacebookAccount(clientId: string, accountId: string | null): Promise<PlatformAccount> {
+  const accounts = await readClientArray<PlatformAccount>(clientId, "accounts.json");
+  const account = accountId ? findAccount(accounts, accountId) : accounts.find((item) => item.platform === "facebook" && item.status === "active");
+  if (!account) throw new Error(`No Facebook account found for ${clientId}.`);
+  if (account.platform !== "facebook") throw new Error(`Account ${account.account_id} is ${account.platform}, not facebook.`);
+  return account;
+}
+
+function makeFacebookAutomationAudit(eventType: PublishAuditEntry["event_type"], account: PlatformAccount, action: string, message: string, metadata: Record<string, unknown>): PublishAuditEntry {
+  const platformPostId = typeof metadata.post_id === "string"
+    ? metadata.post_id
+    : typeof metadata.video_id === "string"
+      ? metadata.video_id
+      : typeof metadata.photo_id === "string"
+        ? metadata.photo_id
+        : null;
+  return {
+    audit_id: id("audit"),
+    timestamp: new Date().toISOString(),
+    event_type: eventType,
+    client_id: account.client_id,
+    publish_task_id: null,
+    content_id: null,
+    variant_id: null,
+    platform: "facebook",
+    account_id: account.account_id,
+    publish_method: null,
+    publish_mode: "api",
+    status_before: null,
+    status_after: eventType === "automation_blocked" ? "blocked" : "published",
+    platform_post_id: platformPostId,
+    post_url: null,
+    message,
+    reason: eventType === "automation_blocked" ? message : null,
+    actor: "cli",
+    source: "cli",
+    metadata: { automation_action: action, ...metadata }
+  };
 }
 
 async function fetchXResearchPosts(clientId: string, mode: "mock" | "api", keywords: string[], maxResults: number): Promise<XResearchPost[]> {
@@ -2251,7 +3069,7 @@ async function fetchXResearchPosts(clientId: string, mode: "mock" | "api", keywo
       research_status: "suggested"
     }));
   }
-  const query = keywords.map((keyword) => `"${keyword}"`).join(" OR ");
+  const query = keywords.join(" OR ");
   const body = await xApiGet({
     mode,
     clientId,
@@ -2374,6 +3192,118 @@ async function fetchXDirectMessages(clientId: string, mode: "api", maxResults: n
   }));
 }
 
+async function fetchXUserMediaPosts(clientId: string, mode: "mock" | "api", userId: string, username: string, maxResults: number, maxVideoSeconds: number): Promise<XMediaPost[]> {
+  const now = new Date().toISOString();
+  if (mode === "mock") {
+    const mockMedia: XMediaPost[] = Array.from({ length: Math.min(maxResults, 12) }, (_, index) => {
+      const isPhoto = index % 3 === 0;
+      const isShortVideo = index % 3 === 1;
+      const durationMs = isPhoto ? undefined : isShortVideo ? 45000 + index * 1000 : 240000 + index * 1000;
+      const type = isPhoto ? "photo" : "video";
+      return {
+        media_post_id: `xmedia_mock_${username}_${index}`,
+        client_id: clientId,
+        source_username: username,
+        source_user_id: userId,
+        post_id: `mock_media_post_${username}_${index}`,
+        text: `Mock media post ${index + 1} from @${username}: ${type} example for client review.`,
+        post_url: `https://x.com/${username}/status/mock_media_post_${index}`,
+        created_at: now,
+        public_metrics: { like_count: 20 + index, reply_count: index % 4, retweet_count: index % 3, quote_count: index % 2 },
+        media: [{
+          media_key: `mock_media_key_${index}`,
+          type,
+          url: isPhoto ? `https://example.com/mock-photo-${index}.jpg` : undefined,
+          preview_image_url: !isPhoto ? `https://example.com/mock-video-preview-${index}.jpg` : undefined,
+          duration_ms: durationMs,
+          public_metrics: !isPhoto ? { impression_count: 1000 + index * 100 } : undefined
+        }],
+        has_photo: isPhoto,
+        has_video: !isPhoto,
+        has_video_under_limit: !isPhoto && Number(durationMs) <= maxVideoSeconds * 1000,
+        max_video_seconds: maxVideoSeconds,
+        selected_for_client: isPhoto || !isPhoto,
+        review_status: "suggested",
+        saved_at: now,
+        updated_at: now
+      };
+    });
+    return mockMedia;
+  }
+
+  const body = await xApiGet({
+    mode,
+    clientId,
+    path: `/2/users/${encodeURIComponent(userId)}/tweets`,
+    costUnits: 1,
+    cacheTtlHours: xApiCacheTtlHours,
+    query: {
+      max_results: maxResults,
+      exclude: "retweets,replies",
+      "tweet.fields": "attachments,author_id,created_at,public_metrics,possibly_sensitive",
+      expansions: "attachments.media_keys",
+      "media.fields": "type,url,preview_image_url,duration_ms,public_metrics,alt_text"
+    }
+  });
+  return normalizeXMediaPosts(body, clientId, userId, username, maxVideoSeconds);
+}
+
+function normalizeXMediaPosts(body: Record<string, unknown>, clientId: string, userId: string, username: string, maxVideoSeconds: number): XMediaPost[] {
+  const now = new Date().toISOString();
+  const includes = body.includes as Record<string, unknown> | undefined;
+  const mediaByKey = new Map<string, Record<string, unknown>>();
+  for (const media of Array.isArray(includes?.media) ? includes.media as Record<string, unknown>[] : []) {
+    mediaByKey.set(String(media.media_key), media);
+  }
+
+  return (Array.isArray(body.data) ? body.data as Record<string, unknown>[] : [])
+    .map((post) => {
+      const attachments = post.attachments as Record<string, unknown> | undefined;
+      const mediaKeys = Array.isArray(attachments?.media_keys) ? attachments.media_keys.map(String) : [];
+      const media = mediaKeys
+        .map((mediaKey) => mediaByKey.get(mediaKey))
+        .filter((item): item is Record<string, unknown> => Boolean(item))
+        .map((item) => ({
+          media_key: String(item.media_key),
+          type: String(item.type || "unknown"),
+          url: typeof item.url === "string" ? item.url : undefined,
+          preview_image_url: typeof item.preview_image_url === "string" ? item.preview_image_url : undefined,
+          duration_ms: typeof item.duration_ms === "number" ? item.duration_ms : undefined,
+          public_metrics: normalizeMetrics(item.public_metrics)
+        }));
+      const hasPhoto = media.some((item) => item.type === "photo");
+      const hasVideo = media.some((item) => item.type === "video" || item.type === "animated_gif");
+      const hasVideoUnderLimit = media.some((item) => (item.type === "video" || item.type === "animated_gif") && typeof item.duration_ms === "number" && item.duration_ms <= maxVideoSeconds * 1000);
+      const hasAnySupportedMedia = hasPhoto || hasVideo;
+      return {
+        media_post_id: `xmedia_${String(post.id)}`,
+        client_id: clientId,
+        source_username: username,
+        source_user_id: userId,
+        post_id: String(post.id),
+        text: String(post.text ?? ""),
+        post_url: `https://x.com/${username}/status/${String(post.id)}`,
+        created_at: typeof post.created_at === "string" ? post.created_at : undefined,
+        public_metrics: normalizeMetrics(post.public_metrics),
+        possibly_sensitive: typeof post.possibly_sensitive === "boolean" ? post.possibly_sensitive : undefined,
+        media,
+        has_photo: hasPhoto,
+        has_video: hasVideo,
+        has_video_under_limit: hasVideoUnderLimit,
+        max_video_seconds: maxVideoSeconds,
+        selected_for_client: hasAnySupportedMedia,
+        review_status: "suggested" as const,
+        saved_at: now,
+        updated_at: now
+      };
+    })
+;
+}
+
+function normalizeXUsername(value: string): string {
+  return value.trim().replace(/^@/, "");
+}
+
 function normalizeXPosts(body: Record<string, unknown>, keywords: string[]): XResearchPost[] {
   const now = new Date().toISOString();
   const users = new Map<string, string>();
@@ -2492,8 +3422,9 @@ async function readXMonthlyApiUsage(clientId: string): Promise<number> {
     .reduce((total, entry) => total + Number(entry.cost_units || 0), 0);
 }
 
-function estimateXReadCost(commandName: "research" | "kol" | "competitor" | "lead" | "engagement" | "dm", limit: number, depth: "light" | "deep" = "light"): number {
+function estimateXReadCost(commandName: "research" | "media" | "kol" | "competitor" | "lead" | "engagement" | "dm", limit: number, depth: "light" | "deep" = "light"): number {
   if (commandName === "kol") return depth === "deep" ? 1 + limit * 2 : 1 + limit;
+  if (commandName === "media") return 2;
   if (commandName === "competitor") return 2;
   if (commandName === "engagement") return 2;
   return 1;
@@ -2564,7 +3495,7 @@ function buildScoredKolProspect(
     kol_priority: priority,
     collaboration_status: priority === "high_priority" ? "priority" : priority === "watchlist" ? "watchlist" : "new",
     prospect_status: "suggested",
-    notes: `KOL score ${kolScore}/100 (${priority}). Phase 1 discovery only. Do not auto-follow, auto-comment, or auto-DM.`,
+    notes: `KOL score ${kolScore}/100 (${priority}). Discovery only. X auto-follow requires the gated x:follow:run workflow; do not auto-comment or auto-DM.`,
     saved_at: now,
     updated_at: now
   };
@@ -2588,7 +3519,7 @@ function buildKolProspects(clientId: string, posts: XResearchPost[], source: XKo
     matched_keywords: [...new Set(recentPosts.flatMap((post) => post.matched_keywords))],
     kol_score: calculateKolScore(recentPosts),
     prospect_status: "suggested",
-    notes: "Phase 1 discovery only. Do not auto-follow, auto-comment, or auto-DM.",
+    notes: "Discovery only. X auto-follow requires the gated x:follow:run workflow; do not auto-comment or auto-DM.",
     saved_at: now,
     updated_at: now
   }));
@@ -3217,11 +4148,24 @@ function printHelp(): void {
   npm run x:publish:dry-run
   npm run x:publish:live -- --confirm LIVE
   npm run x:research:search -- --client_id client_demo_001 --mode mock
+  npm run x:media:scan -- --client_id client_demo_001 --username ChechikTv --max_video_seconds 180 --mode mock
+  npm run x:media:fetch -- --client_id client_brand_001 --username ChechikTv --limit 100 --max_video_seconds 180 --mode api
+  npm run x:account:refresh -- --client_id client_demo_001 --account_id x_demo_001
+  npm run x:follow:run -- --client_id client_demo_001 --account_id x_demo_001 --username competitor_demo --mode mock --approved
   npm run x:kol:discover -- --client_id client_demo_001 --mode mock
   npm run x:lead:discover -- --client_id client_demo_001 --mode mock
   npm run x:engagement:sync -- --client_id client_demo_001 --mode mock
   npm run x:dm:sync -- --client_id client_demo_001
-  npm run x:report -- --client_id client_demo_001`);
+  npm run x:report -- --client_id client_demo_001
+  npm run meta:setup:status
+  npm run meta:account:check -- --client_id client_demo_001 --account_id facebook_demo_001
+  npm run meta:publish:dry-run -- --client_id client_demo_001 --variant_id variant_brand_intro_facebook_demo_001
+  npm run ig:account:check -- --client_id client_demo_001 --account_id ig_demo_001
+  npm run ig:publish:image -- --client_id client_demo_001 --account_id ig_demo_001 --image_url https://example.com/image.jpg --caption "test" --confirm LIVE
+  npm run ig:comments:list -- --client_id client_demo_001 --account_id ig_demo_001 --media_id <ig_media_id>
+  npm run ig:comment:reply -- --client_id client_demo_001 --account_id ig_demo_001 --comment_id <comment_id> --message "Thanks" --confirm LIVE
+  npm run ig:private-reply -- --client_id client_demo_001 --account_id ig_demo_001 --comment_id <comment_id> --message "Sent you details" --confirm LIVE
+  npm run ig:dm:send -- --client_id client_demo_001 --account_id ig_demo_001 --recipient_id <ig_scoped_user_id> --message "Hi" --confirm LIVE`);
 }
 
 main().catch((error: unknown) => {

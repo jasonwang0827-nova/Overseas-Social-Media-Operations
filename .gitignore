@@ -8,4 +8,8 @@ npm-debug.log*
 *.env.*
 XAPI.env
 XAPI.env.*
+R2API.env
+R2API.env.*
 data/cache/
+
+data/token-vault/

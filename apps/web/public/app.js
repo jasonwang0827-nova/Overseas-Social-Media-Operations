@@ -8,7 +8,7 @@ const state = {
   leadStageFilter: "all",
   leadPlatformFilter: "all",
   leadSourceFilter: "all",
-  xTab: "research",
+  xTab: "publish",
   xMode: "mock",
   xResearchKeywordFilter: "",
   xResearchStatusFilter: "all",
@@ -17,12 +17,15 @@ const state = {
   xKolSort: "kol_score",
   xLeadSort: "lead_score",
   xHistoryFilter: "all",
+  metaPlatformFilter: "all",
   data: null
 };
 
 const app = document.querySelector("#app");
 const refreshButton = document.querySelector("#refreshButton");
 const clientSelect = document.querySelector("#clientSelect");
+const initialClientId = new URLSearchParams(window.location.search).get("client_id");
+if (initialClientId) state.clientId = initialClientId;
 
 refreshButton.addEventListener("click", () => loadState());
 clientSelect.addEventListener("change", (event) => {
@@ -71,6 +74,7 @@ function render() {
   if (!state.data) return;
   const views = {
     overview: renderOverview,
+    operator: renderOperatorDashboard,
     clients: renderClients,
     accounts: renderAccounts,
     capabilities: renderCapabilities,
@@ -78,6 +82,7 @@ function render() {
     publish: renderPublish,
     leads: renderLeads,
     xhub: renderXHub,
+    metahub: renderMetaHub,
     reports: renderReports
   };
   app.innerHTML = views[state.view]();
@@ -88,6 +93,7 @@ function renderOverview() {
   const { summary, client, queue, leads, contents } = state.data;
   return `
     ${renderMetrics(summary)}
+    ${renderDemoModePanel()}
     <div class="panel-grid">
       <section class="panel">
         <h2>${escapeHtml(client.client_name)}</h2>
@@ -105,6 +111,272 @@ function renderOverview() {
         </div>
       </section>
     </div>
+  `;
+}
+
+function renderOperatorDashboard() {
+  const { client, accounts, queue, records, leads, drafts, contents, variants, operations = {} } = state.data;
+  const today = new Date().toISOString().slice(0, 10);
+  const weekEnd = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const todayTasks = queue
+    .filter((task) => safeDateKey(task.scheduled_at).slice(0, 10) === today)
+    .sort((a, b) => safeDateKey(a.scheduled_at).localeCompare(safeDateKey(b.scheduled_at)));
+  const weekTasks = queue
+    .filter((task) => {
+      const taskDate = safeDateKey(task.scheduled_at).slice(0, 10);
+      return taskDate >= today && taskDate <= weekEnd;
+    })
+    .sort((a, b) => safeDateKey(a.scheduled_at).localeCompare(safeDateKey(b.scheduled_at)));
+  const publishedToday = records.filter((record) => record.published_at?.slice(0, 10) === today);
+  const dueLeads = leads
+    .filter((lead) => isActionableLead(lead) && lead.next_follow_up_at && lead.next_follow_up_at.slice(0, 10) <= today)
+    .sort((a, b) => safeDateKey(a.next_follow_up_at).localeCompare(safeDateKey(b.next_follow_up_at)));
+  const highUnreplied = leads
+    .filter((lead) => Number(lead.lead_score || 0) >= 70 && !["replied", "waiting_response", "booked", "converted", "not_interested", "spam"].includes(lead.lead_stage))
+    .sort((a, b) => Number(b.lead_score || 0) - Number(a.lead_score || 0));
+  const pendingDrafts = drafts.filter((draft) => ["draft", "ready_for_review"].includes(draft.approval_status || "draft") && draft.sent_status !== "sent");
+  const accountIssues = accounts.filter((account) =>
+    account.status !== "active" ||
+    !account.posting_enabled ||
+    !account.lead_tracking_enabled ||
+    ["disconnected", "expired", "error"].includes(account.auth_status)
+  );
+  const blockedTasks = queue.filter((task) => ["blocked", "failed"].includes(task.status));
+  const missingPackageTasks = todayTasks.filter((task) => !hasManualPackage(task));
+  const missingBackfillTasks = queue.filter((task) => {
+    if (task.status !== "published") return false;
+    const record = records.find((item) => item.publish_task_id === task.publish_task_id);
+    return record?.publish_mode === "manual" && !record.post_url;
+  });
+  const reportStatus = operations.report_status || {};
+  const issues = [
+    ...blockedTasks.map((task) => ({ label: `${task.platform} ${task.publish_task_id}`, detail: task.blocked_reason || task.last_error || task.error_message || task.status, view: "publish" })),
+    ...missingPackageTasks.map((task) => ({ label: `${task.platform} ${task.variant_id}`, detail: "今天要发，但还没有找到手动发布包。", view: "publish" })),
+    ...missingBackfillTasks.map((task) => ({ label: `${task.platform} ${task.publish_task_id}`, detail: "已标记发布，但缺少真实 post_url 回填。", view: "publish" })),
+    ...accountIssues.map((account) => ({ label: account.display_name || account.account_id, detail: `${account.platform} · ${account.status} · posting:${account.posting_enabled} · leads:${account.lead_tracking_enabled} · auth:${account.auth_status}`, view: "accounts" }))
+  ];
+
+  return `
+    <section class="panel operator-hero">
+      <div>
+        <p class="eyebrow">Daily Operator Dashboard</p>
+        <h2>今日运营工作台</h2>
+        <p class="muted">${escapeHtml(client.client_name)} · ${escapeHtml(today)} · 只做本地 JSON / mock / manual workflow，不会触发真实平台 API。</p>
+      </div>
+      <div class="inline-actions">
+        <button class="action-button secondary" data-action="gotoView" data-view-target="publish">去发布队列</button>
+        <button class="action-button secondary" data-action="gotoView" data-view-target="leads">去线索</button>
+        <button class="action-button secondary" data-action="gotoView" data-view-target="reports">去报告</button>
+      </div>
+    </section>
+
+    <div class="summary-grid operator-summary">
+      <div class="metric"><span>今日待发</span><strong>${todayTasks.filter((task) => task.status !== "published" && task.status !== "cancelled").length}</strong></div>
+      <div class="metric"><span>今日已发布</span><strong>${publishedToday.length}</strong></div>
+      <div class="metric"><span>缺手动包</span><strong>${missingPackageTasks.length}</strong></div>
+      <div class="metric"><span>待跟进线索</span><strong>${dueLeads.length}</strong></div>
+      <div class="metric"><span>高分未回复</span><strong>${highUnreplied.length}</strong></div>
+      <div class="metric"><span>异常提醒</span><strong>${issues.length}</strong></div>
+    </div>
+
+    <div class="panel-grid">
+      <section class="panel operator-task-panel">
+        <h2>今日发布任务</h2>
+        <p class="muted">先导出手动包，运营人员在原生平台发布后，再回填真实 post_url。</p>
+        <table class="table">
+          <thead><tr><th>时间</th><th>平台/账号</th><th>内容</th><th>状态</th><th>手动包</th><th>回填</th><th>操作</th></tr></thead>
+          <tbody>
+            ${todayTasks.map((task) => renderOperatorTaskRow(task, contents, variants, accounts, records)).join("") || `<tr><td colspan="7" class="muted">今天没有排期任务。可以去发布队列批量排期或手动加入队列。</td></tr>`}
+          </tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h2>今日提醒</h2>
+        <div class="operator-alert-list">
+          ${issues.slice(0, 10).map((issue) => `
+            <article class="operator-alert">
+              <strong>${escapeHtml(issue.label)}</strong>
+              <p>${escapeHtml(issue.detail)}</p>
+              <button class="action-button secondary" data-action="gotoView" data-view-target="${escapeHtml(issue.view)}">处理</button>
+            </article>
+          `).join("") || `<p class="muted">没有发现阻塞项。今天可以按计划推进。</p>`}
+        </div>
+      </section>
+    </div>
+
+    <div class="panel-grid" style="margin-top:24px">
+      <section class="panel">
+        <h2>线索跟进</h2>
+        <div class="summary-grid small-summary">
+          <div class="metric"><span>今日到期</span><strong>${dueLeads.length}</strong></div>
+          <div class="metric"><span>高分未回复</span><strong>${highUnreplied.length}</strong></div>
+          <div class="metric"><span>待审草稿</span><strong>${pendingDrafts.length}</strong></div>
+          <div class="metric"><span>已预约</span><strong>${leads.filter((lead) => lead.lead_stage === "booked").length}</strong></div>
+        </div>
+        <table class="table compact-table">
+          <thead><tr><th>线索</th><th>阶段</th><th>分数</th><th>下次跟进</th><th>建议</th></tr></thead>
+          <tbody>
+            ${[...dueLeads, ...highUnreplied].filter(uniqueBy("lead_id")).slice(0, 8).map((lead) => `
+              <tr>
+                <td><strong>${escapeHtml(lead.user_display_name || lead.user_handle || lead.lead_id)}</strong><br><span class="muted">${escapeHtml((lead.message_text || "").slice(0, 90))}</span></td>
+                <td>${status(lead.lead_stage)}</td>
+                <td>${escapeHtml(lead.lead_score ?? "-")}</td>
+                <td>${escapeHtml(lead.next_follow_up_at || "未设置")}</td>
+                <td>${escapeHtml((lead.recommended_reply || "检查线索详情并决定是否生成回复草稿。").slice(0, 120))}</td>
+              </tr>
+            `).join("") || `<tr><td colspan="5" class="muted">没有今日到期或高分未回复线索。</td></tr>`}
+          </tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h2>报告状态</h2>
+        <table class="table compact-table">
+          <tbody>
+            ${row("今日日报", reportStatus.daily?.exists ? `已生成 · ${reportStatus.daily.path}` : `未生成 · ${reportStatus.daily?.path || ""}`)}
+            ${row("本周周报", reportStatus.weekly?.exists ? `已生成 · ${reportStatus.weekly.path}` : `未生成 · ${reportStatus.weekly?.path || ""}`)}
+            ${row("第一周运营计划", reportStatus.first_week_plan?.exists ? `已生成 · ${reportStatus.first_week_plan.path}` : "未生成")}
+            ${row("本周排期", `${weekTasks.length} 个任务`)}
+          </tbody>
+        </table>
+        <div class="inline-actions">
+          <button class="action-button" data-action="writeReport">生成今日报告</button>
+          <button class="action-button secondary" data-action="writeWeeklyReport">生成本周报告</button>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel" style="margin-top:24px">
+      <h2>今日运营 Checklist</h2>
+      <div class="operator-checklist">
+        ${[
+          "检查今日发布任务是否都有手动发布包。",
+          "逐个平台复制 caption、hashtags、CTA 和素材路径，手动发布。",
+          "发布完成后回填真实 post_url，并确认 publish-records / audit log 已记录。",
+          "检查评论、私信、mentions、WhatsApp 或表单，把有效互动导入线索。",
+          "为高分线索生成回复草稿，人工审核后再手动回复。",
+          "生成今日报告，记录发布数量、线索数量、异常任务和明天建议。"
+        ].map((item) => `<label class="check-item"><input type="checkbox" /> <span>${escapeHtml(item)}</span></label>`).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function renderOperatorTaskRow(task, contents, variants, accounts, records) {
+  const content = contents.find((item) => item.content_id === task.content_id);
+  const variant = variants.find((item) => item.variant_id === task.variant_id);
+  const account = accounts.find((item) => item.account_id === task.account_id);
+  const record = records.find((item) => item.publish_task_id === task.publish_task_id);
+  const packageState = getManualPackageState(task);
+  return `
+    <tr>
+      <td>${escapeHtml(task.scheduled_at ? formatDateTime(task.scheduled_at) : "unscheduled")}</td>
+      <td>${escapeHtml(task.platform)}<br><span class="muted">${escapeHtml(account?.display_name || task.account_id)}</span></td>
+      <td><strong>${escapeHtml(content?.title || task.content_id)}</strong><br><span class="muted">${escapeHtml(variant?.caption?.slice(0, 90) || task.variant_id)}</span></td>
+      <td>${status(task.status)} ${status(task.approval_status)}</td>
+      <td>${status(packageState.status)}<br><span class="muted">${escapeHtml(packageState.label)}</span></td>
+      <td>
+        <input class="manual-url-input" data-task-id="${escapeHtml(task.publish_task_id)}" placeholder="post_url" value="${escapeHtml(record?.post_url || "")}" />
+      </td>
+      <td>
+        <div class="table-actions">
+          <button class="action-button secondary" data-action="manualExportTask" data-task-id="${escapeHtml(task.publish_task_id)}" data-variant-id="${escapeHtml(task.variant_id)}">导出包</button>
+          <button class="action-button" data-action="manualCompleteTask" data-task-id="${escapeHtml(task.publish_task_id)}">手动完成</button>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function renderDemoModePanel() {
+  const data = state.data;
+  const { client, accounts, contents, variants, queue, records, leads, drafts, x, meta } = data;
+  const highScoreLeads = leads.filter((lead) => Number(lead.lead_score || 0) >= 70).length;
+  const activeAccounts = accounts.filter((account) => account.status === "active");
+  const approvedVariants = variants.filter((variant) => variant.approval_status === "approved" || variant.status === "approved");
+  const pendingDrafts = drafts.filter((draft) => draft.approval_status !== "approved" || draft.sent_status === "not_sent").length;
+  const metaMissing = meta?.env_status?.required_missing?.length || 0;
+  const demoStages = [
+    {
+      label: "客户",
+      value: client.client_name,
+      state: client.status === "active" ? "ready" : "review",
+      detail: `${client.industry} · ${client.region} · ${client.language.join(" / ")}`,
+      view: "clients"
+    },
+    {
+      label: "账号",
+      value: `${activeAccounts.length}/${accounts.length}`,
+      state: activeAccounts.length ? "ready" : "blocked",
+      detail: "支持一个客户绑定多个 IG / X / Facebook 等账号",
+      view: "accounts"
+    },
+    {
+      label: "内容",
+      value: contents.length,
+      state: contents.length ? "ready" : "blocked",
+      detail: `${approvedVariants.length} 个平台版本可进入发布或演示`,
+      view: "content"
+    },
+    {
+      label: "发布",
+      value: `${records.length} records`,
+      state: records.length ? "ready" : queue.length ? "review" : "blocked",
+      detail: `${queue.filter((task) => task.status === "scheduled").length} scheduled · ${queue.filter((task) => task.status === "blocked").length} blocked`,
+      view: "publish"
+    },
+    {
+      label: "线索",
+      value: leads.length,
+      state: highScoreLeads ? "ready" : leads.length ? "review" : "blocked",
+      detail: `${highScoreLeads} high-score · ${pendingDrafts} draft/review items`,
+      view: "leads"
+    },
+    {
+      label: "X",
+      value: `${x?.research_posts?.length || 0} research`,
+      state: x?.research_posts?.length || x?.kol_prospects?.length || x?.lead_candidates?.length ? "ready" : "review",
+      detail: `${x?.kol_prospects?.length || 0} KOL · ${x?.lead_candidates?.length || 0} candidate · ${x?.query_history?.length || 0} queries`,
+      view: "xhub"
+    },
+    {
+      label: "Meta",
+      value: metaMissing ? "manual setup" : "ready",
+      state: "review",
+      detail: metaMissing ? `${metaMissing} local env keys missing; dry-run/manual only` : "dry-run/manual workflow ready",
+      view: "metahub"
+    }
+  ];
+
+  return `
+    <section class="panel demo-panel">
+      <div class="row-card-head">
+        <div>
+          <p class="eyebrow">Client Demo Mode</p>
+          <h2>演示总览：从客户运营到线索闭环</h2>
+          <p class="muted">这块是给你讲 demo 用的摘要，不会触发任何真实 API。推荐演示顺序：客户、账号、内容、发布、线索、X 工作台、Meta 工作台、报告。</p>
+        </div>
+        <div class="tag-row">
+          ${status("manual-gated")}
+          ${status("no_auto_dm")}
+          ${status("no_live_meta")}
+        </div>
+      </div>
+      <div class="demo-stage-grid">
+        ${demoStages.map((stage) => `
+          <button class="demo-stage ${escapeHtml(stage.state)}" data-action="gotoView" data-view-target="${escapeHtml(stage.view)}">
+            <span>${escapeHtml(stage.label)}</span>
+            <strong>${escapeHtml(stage.value)}</strong>
+            <small>${escapeHtml(stage.detail)}</small>
+          </button>
+        `).join("")}
+      </div>
+      <div class="demo-script">
+        <strong>30 秒讲法：</strong>
+        <span>这个系统不是单纯发帖工具，而是按客户管理账号、内容资产、平台版本、发布排期、线索跟进和报告。X 已经支持受控 API/dry-run，Meta 第一阶段只做 setup/dry-run/manual workflow。</span>
+      </div>
+    </section>
   `;
 }
 
@@ -185,7 +457,7 @@ function renderClients() {
 }
 
 function renderAccounts() {
-  const { accounts, platform_options, account_role_options, content_focus_options, account_stats } = state.data;
+  const { accounts, platform_options, account_role_options, content_focus_options, account_stats, x_account_auth = {} } = state.data;
   return `
     <section class="panel">
       <h2>新增 / 编辑平台账号</h2>
@@ -251,6 +523,14 @@ function renderAccounts() {
           <span>能力覆盖 JSON</span>
           <textarea name="capability_override" placeholder='{"can_read_comments": false, "can_publish_draft": true}'></textarea>
         </label>
+        <label class="wide binding-field binding-field-x">
+          <span>X Binding JSON</span>
+          <textarea name="x_binding" placeholder='{"x_username":"brand","token_ref":"x_brand_001","oauth_version":"2.0"}'></textarea>
+        </label>
+        <label class="wide binding-field binding-field-meta">
+          <span>Meta Binding JSON</span>
+          <textarea name="meta_binding" placeholder='{"page_id":"123","page_name":"Brand Page","permissions":["pages_show_list"]}'></textarea>
+        </label>
         <div class="form-actions">
           <button class="action-button" type="submit">保存账号</button>
           <button class="action-button secondary" type="button" data-action="resetAccountForm">清空表单</button>
@@ -276,7 +556,11 @@ function renderAccounts() {
                 <td>${tag(account.account_role)}</td>
                 <td>${tag(account.content_focus)}</td>
                 <td>${escapeHtml(account.language)} / ${escapeHtml(account.region)}</td>
-                <td>${status(account.auth_status)}</td>
+                <td>
+                  ${status(account.auth_status)}
+                  ${account.platform === "x" ? renderXAccountAuthSummary(x_account_auth[account.account_id]) : ""}
+                  ${["facebook", "instagram"].includes(account.platform) ? renderAccountMetaSummary(account) : ""}
+                </td>
                 <td>${status(account.status)}</td>
                 <td>${status(account.posting_enabled ? "posting_on" : "posting_off")} ${status(account.lead_tracking_enabled ? "leads_on" : "leads_off")}</td>
                 <td>${renderAccountCapabilityStatus(account)}</td>
@@ -284,6 +568,10 @@ function renderAccounts() {
                 <td>
                   <div class="table-actions">
                     <button class="action-button secondary" data-action="editAccount" data-account-id="${escapeHtml(account.account_id)}">编辑</button>
+                    ${account.platform === "x" ? `<button class="action-button" data-action="connectXAccount" data-account-id="${escapeHtml(account.account_id)}">Connect X</button>` : ""}
+                    ${account.platform === "x" ? `<button class="action-button secondary" data-action="checkXAccount" data-account-id="${escapeHtml(account.account_id)}">检查 X 授权</button>` : ""}
+                    ${["facebook", "instagram"].includes(account.platform) ? `<button class="action-button" data-action="connectMetaAccount" data-account-id="${escapeHtml(account.account_id)}">Connect Meta</button>` : ""}
+                    ${["facebook", "instagram"].includes(account.platform) ? `<button class="action-button secondary" data-action="metaAccountCheck" data-account-id="${escapeHtml(account.account_id)}">检查 Meta 绑定</button>` : ""}
                     <button class="action-button secondary" data-action="togglePosting" data-account-id="${escapeHtml(account.account_id)}" data-value="${String(!account.posting_enabled)}">${account.posting_enabled ? "停发布" : "开发布"}</button>
                     <button class="action-button secondary" data-action="toggleLeadTracking" data-account-id="${escapeHtml(account.account_id)}" data-value="${String(!account.lead_tracking_enabled)}">${account.lead_tracking_enabled ? "停线索" : "开线索"}</button>
                   </div>
@@ -294,6 +582,32 @@ function renderAccounts() {
         </tbody>
       </table>
     </section>
+  `;
+}
+
+function renderXAccountAuthSummary(auth) {
+  if (!auth) return `<div class="mode-hint">X account token: unknown</div>`;
+  return `
+    <div class="mode-hint">
+      X user: ${escapeHtml(auth.x_username || "-")}<br>
+      token: ${escapeHtml(auth.token_status)} · ${escapeHtml(auth.setup_status)}<br>
+      follow: ${auth.can_follow_as_user ? "yes" : "no"} · dm: ${auth.can_dm_as_user ? "yes" : "no"}<br>
+      missing: ${escapeHtml((auth.missing_scopes || []).join(", ") || "none")}
+    </div>
+  `;
+}
+
+function renderAccountMetaSummary(account) {
+  const binding = account.meta_binding || {};
+  const missing = getMissingMetaBindings(account);
+  return `
+    <div class="mode-hint">
+      Meta: ${escapeHtml(binding.setup_status || "not_started")} · token ${escapeHtml(binding.token_status || "not_configured")}<br>
+      ${account.platform === "facebook"
+        ? `Page: ${escapeHtml(binding.page_id || "-")}`
+        : `IG: ${escapeHtml(binding.instagram_business_account_id || "-")}`}<br>
+      missing: ${escapeHtml(missing.join(", ") || "none")}
+    </div>
   `;
 }
 
@@ -525,9 +839,12 @@ function renderPublish() {
     const statusMatch = state.publishStatusFilter === "all" || task.status === state.publishStatusFilter;
     const platformMatch = state.publishPlatformFilter === "all" || task.platform === state.publishPlatformFilter;
     return statusMatch && platformMatch;
-  }).sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
-  const todayTasks = queue.filter((task) => task.scheduled_at.slice(0, 10) === today);
-  const weekTasks = queue.filter((task) => task.scheduled_at.slice(0, 10) >= today && task.scheduled_at.slice(0, 10) <= weekEnd);
+  }).sort((a, b) => safeDateKey(a.scheduled_at).localeCompare(safeDateKey(b.scheduled_at)));
+  const todayTasks = queue.filter((task) => safeDateKey(task.scheduled_at).slice(0, 10) === today);
+  const weekTasks = queue.filter((task) => {
+    const taskDate = safeDateKey(task.scheduled_at).slice(0, 10);
+    return taskDate >= today && taskDate <= weekEnd;
+  });
   const accountDayCounts = todayTasks.reduce((acc, task) => {
     acc[task.account_id] = (acc[task.account_id] || 0) + 1;
     return acc;
@@ -535,10 +852,13 @@ function renderPublish() {
   return `
     <section class="panel">
       <h2>Publish Queue Workspace</h2>
+      <p class="muted">UI 上所有发布操作均为 <strong>Mock 模式</strong>，不会真实发帖。如果需要真实 API 发布，必须通过 CLI 执行 <code>--mode api</code>，且纯文本 X 发布需要额外加 <code>--confirm LIVE</code>。</p>
+      <p class="muted">Manual Publishing Export 会生成运营人员可复制的发布包；手动发完后把真实 post_url 回填到系统，系统会写入 publish-records 和 publish-audit-log。</p>
       <div class="inline-actions">
         <button class="action-button" data-action="runPublish">运行 mock 发布</button>
         <button class="action-button secondary" data-action="batchSchedule">批量排期今日</button>
       </div>
+      ${renderPublishActionNotice(state.data.publish_action_log)}
       <div class="summary-grid small-summary">
         <div class="metric"><span>今日计划</span><strong>${todayTasks.length}</strong></div>
         <div class="metric"><span>本周计划</span><strong>${weekTasks.length}</strong></div>
@@ -576,7 +896,12 @@ function renderPublish() {
                 <td>${escapeHtml(variant.platform)}<br><span class="muted">${escapeHtml(account?.display_name || variant.account_id)}</span></td>
                 <td>${escapeHtml(variant.caption.slice(0, 180))}</td>
                 <td><input class="schedule-input" data-variant-id="${escapeHtml(variant.variant_id)}" type="datetime-local" value="${defaultLocalDateTime()}" /></td>
-                <td><button class="action-button secondary" data-action="scheduleVariant" data-variant-id="${escapeHtml(variant.variant_id)}">加入队列</button></td>
+                <td>
+                  <div class="table-actions">
+                    <button class="action-button secondary" data-action="scheduleVariant" data-variant-id="${escapeHtml(variant.variant_id)}">加入队列</button>
+                    <button class="action-button secondary" data-action="manualExportVariant" data-variant-id="${escapeHtml(variant.variant_id)}">导出手动包</button>
+                  </div>
+                </td>
               </tr>
             `;
           }).join("") || `<tr><td colspan="5" class="muted">没有可排期的 approved variant。</td></tr>`}
@@ -587,7 +912,7 @@ function renderPublish() {
     <section class="panel">
       <h2>发布队列</h2>
       <table class="table">
-        <thead><tr><th>内容</th><th>平台/账号</th><th>时间</th><th>状态</th><th>原因</th><th>操作</th></tr></thead>
+        <thead><tr><th>内容</th><th>平台/账号</th><th>时间</th><th>状态</th><th>原因</th><th>手动回填</th><th>操作</th></tr></thead>
         <tbody>
           ${filteredQueue.map((task) => {
             const content = contents.find((item) => item.content_id === task.content_id);
@@ -598,12 +923,18 @@ function renderPublish() {
                 <td>${escapeHtml(task.platform)}<br><span class="muted">${escapeHtml(task.account_id)}</span></td>
                 <td>
                   <input class="reschedule-input" data-task-id="${escapeHtml(task.publish_task_id)}" type="datetime-local" value="${toLocalDateTime(task.scheduled_at)}" />
-                  <p class="muted">${escapeHtml(task.published_at ? `published ${task.published_at}` : "")}</p>
+                  <p class="muted">${escapeHtml(task.published_at ? `published ${task.published_at}` : task.scheduled_at ? "" : "unscheduled")}</p>
                 </td>
                 <td>${status(task.status)} ${status(task.approval_status)}</td>
                 <td>${escapeHtml(task.blocked_reason || task.error_message || variant?.caption.slice(0, 90) || "")}</td>
                 <td>
+                  <input class="manual-url-input" data-task-id="${escapeHtml(task.publish_task_id)}" placeholder="https://platform.com/post/..." value="${escapeHtml((records.find((record) => record.publish_task_id === task.publish_task_id)?.post_url) || "")}" />
+                  <div class="mode-hint">手动发布后回填 URL，不会调用 API。</div>
+                </td>
+                <td>
                   <div class="table-actions">
+                    <button class="action-button secondary" data-action="manualExportTask" data-task-id="${escapeHtml(task.publish_task_id)}" data-variant-id="${escapeHtml(task.variant_id)}">导出包</button>
+                    <button class="action-button" data-action="manualCompleteTask" data-task-id="${escapeHtml(task.publish_task_id)}">手动完成</button>
                     <button class="action-button secondary" data-action="rescheduleTask" data-task-id="${escapeHtml(task.publish_task_id)}">改时间</button>
                     <button class="action-button secondary" data-action="retryTask" data-task-id="${escapeHtml(task.publish_task_id)}">重试</button>
                     <button class="action-button danger" data-action="cancelTask" data-task-id="${escapeHtml(task.publish_task_id)}">取消</button>
@@ -611,24 +942,25 @@ function renderPublish() {
                 </td>
               </tr>
             `;
-          }).join("") || `<tr><td colspan="6" class="muted">当前筛选没有发布任务。</td></tr>`}
+          }).join("") || `<tr><td colspan="7" class="muted">当前筛选没有发布任务。</td></tr>`}
         </tbody>
       </table>
     </section>
     <section class="panel" style="margin-top:24px">
       <h2>发布记录</h2>
-      <p class="muted">已记录 ${records.length} 条 mock 发布结果。</p>
+      <p class="muted">已记录 ${records.length} 条发布结果，包含 mock / manual / api。手动发布回填会保留 post_url 并追加 audit log。</p>
       <div class="tag-row">
         ${Object.entries(accountDayCounts).map(([accountId, count]) => tag(`${accountId}: 今日 ${count}`)).join("")}
       </div>
       <table class="table" style="margin-top:14px">
-        <thead><tr><th>记录</th><th>平台</th><th>账号</th><th>发布时间</th><th>Mock URL</th></tr></thead>
+        <thead><tr><th>记录</th><th>平台</th><th>账号</th><th>模式</th><th>发布时间</th><th>Post URL</th></tr></thead>
         <tbody>
           ${records.map((record) => `
             <tr>
               <td>${escapeHtml(record.publish_record_id || record.record_id || record.publish_task_id)}</td>
               <td>${escapeHtml(record.platform)}</td>
               <td>${escapeHtml(record.account_id)}</td>
+              <td>${status(record.publish_mode || "mock")}</td>
               <td>${escapeHtml(record.published_at || "")}</td>
               <td>${record.post_url || record.mock_url ? `<a href="${escapeHtml(record.post_url || record.mock_url)}" target="_blank">${escapeHtml(record.post_url || record.mock_url)}</a>` : ""}</td>
             </tr>
@@ -789,7 +1121,7 @@ function renderXHub() {
       <div class="row-card-head">
         <div>
           <h2>X Platform Module</h2>
-          <p class="muted">Phase 1：功能全，动作手动。搜索、KOL、线索、mentions、DM、报告都可以跑；回复、DM、评论、关注不会自动发送。</p>
+          <p class="muted">⚠️ 安全须知 — <strong>Mock 模式</strong>只操作本地 JSON 数据，不联网不收费。<strong>API 模式</strong>会读取 X 公开信息（搜索/用户资料/帖子），不会写任何内容。<strong>estimated_cost</strong> 是内部估算单位，不是官方账单金额。<strong>Live 发布</strong>仅限 CLI 执行，必须加 <code>--confirm LIVE</code>，UI 不提供此功能。</p>
         </div>
         <div class="tag-row">
           ${status("manual_gated")}
@@ -809,6 +1141,7 @@ function renderXHub() {
           <select id="xMode">
             ${["mock", "api"].map((mode) => `<option value="${mode}" ${state.xMode === mode ? "selected" : ""}>${mode}</option>`).join("")}
           </select>
+          <span class="mode-hint">mock=安全(本地数据) · api=读取公开信息(会产生估算费用)</span>
         </label>
         <label class="wide-input">
           <span>关键词</span>
@@ -847,14 +1180,391 @@ function renderXHub() {
     </section>
 
     <div class="x-tabs">
-      ${["research", "kol", "leads", "inbox", "reports"].map((tab) => `<button class="action-button ${state.xTab === tab ? "" : "secondary"}" data-action="xTab" data-tab="${tab}">${tab}</button>`).join("")}
+      ${[
+        ["publish", "发布审核"],
+        ["research", "research"],
+        ["kol", "kol"],
+        ["leads", "leads"],
+        ["inbox", "inbox"],
+        ["reports", "reports"]
+      ].map(([tab, label]) => `<button class="action-button ${state.xTab === tab ? "" : "secondary"}" data-action="xTab" data-tab="${tab}">${label}</button>`).join("")}
     </div>
 
+    ${state.xTab === "publish" ? renderXPublishReview() : ""}
     ${state.xTab === "research" ? renderXResearch(research) : ""}
     ${state.xTab === "kol" ? renderXKols(prospects) : ""}
     ${state.xTab === "leads" ? renderXLeadCandidates(candidates) : ""}
     ${state.xTab === "inbox" ? renderXInbox(inbox) : ""}
     ${state.xTab === "reports" ? renderXReports(reports) : ""}
+  `;
+}
+
+function renderMetaHub() {
+  const meta = state.data.meta || {};
+  const foundation = meta.foundation || {};
+  const env = meta.env_status || {};
+  const accounts = (state.data.accounts || []).filter((account) => account.platform === "facebook" || account.platform === "instagram");
+  const facebookAccounts = accounts.filter((account) => account.platform === "facebook");
+  const instagramAccounts = accounts.filter((account) => account.platform === "instagram");
+  const variants = (state.data.variants || []).filter((variant) => variant.platform === "facebook" || variant.platform === "instagram");
+  const filteredVariants = variants.filter((variant) => state.metaPlatformFilter === "all" || variant.platform === state.metaPlatformFilter);
+  return `
+    <section class="panel">
+      <div class="row-card-head">
+        <div>
+          <h2>Meta Platform Foundation</h2>
+          <p class="muted">Facebook Page 和 Instagram 共用 Meta foundation，但账号是一对多管理：一个客户可以有多个 Facebook Page、多个 Instagram 账号。Web UI 展示 setup、dry-run、manual workflow 和 CLI 实测命令；真实 Meta API 写入只走 CLI，并且必须显式 <code>--confirm LIVE</code>。</p>
+        </div>
+        <div class="tag-row">
+          ${status(foundation.phase || "phase_1_foundation")}
+          ${status("web_live_disabled")}
+          ${status("manual_gated")}
+        </div>
+      </div>
+      <div class="summary-grid small-summary">
+        <div class="metric"><span>Facebook Accounts</span><strong>${facebookAccounts.length}</strong></div>
+        <div class="metric"><span>Instagram Accounts</span><strong>${instagramAccounts.length}</strong></div>
+        <div class="metric"><span>Meta Variants</span><strong>${variants.length}</strong></div>
+        <div class="metric"><span>Missing Env</span><strong>${(env.required_missing || []).length}</strong></div>
+      </div>
+    </section>
+
+    ${renderMetaSetupStatus(foundation, env)}
+    ${state.data.meta_action_log ? `<section class="panel" style="margin-top:24px"><h2>Meta Action Log</h2><pre class="log-box">${escapeHtml(state.data.meta_action_log)}</pre></section>` : ""}
+    ${renderMetaAccounts("Facebook Page Accounts", facebookAccounts)}
+    ${renderMetaAccounts("Instagram Accounts", instagramAccounts)}
+    ${renderMetaDryRunSection(filteredVariants)}
+    ${renderMetaCliLiveTestSection(facebookAccounts, instagramAccounts)}
+    ${renderMetaManualWorkflow()}
+    ${renderMetaSopSection()}
+  `;
+}
+
+function renderMetaSetupStatus(foundation, env) {
+  const rules = foundation.safety_rules || {};
+  return `
+    <section class="panel" style="margin-top:24px">
+      <h2>Meta Setup Status</h2>
+      <div class="summary-grid small-summary">
+        <div class="metric"><span>Graph Version</span><strong>${escapeHtml(foundation.graph_api_version || "v23.0")}</strong></div>
+        <div class="metric"><span>Real Publish</span><strong>${rules.real_publish_enabled ? "enabled" : "disabled"}</strong></div>
+        <div class="metric"><span>Web Live Publish</span><strong>${rules.web_ui_live_publish_enabled ? "enabled" : "disabled"}</strong></div>
+        <div class="metric"><span>Env File</span><strong>${escapeHtml(env.env_file || "MetaAPI.env")}</strong></div>
+      </div>
+      <div class="tag-row">
+        ${status((env.required_missing || []).length ? "missing_credentials" : "ready_for_manual")}
+        ${status("cli_live_test_available")}
+        ${status("ready_for_manual")}
+        ${rules.web_ui_live_publish_enabled ? "" : status("web_live_disabled")}
+      </div>
+      <table class="table compact-table">
+        <tbody>
+          ${row("Allowed modes", (rules.allowed_modes || ["mock", "dry_run", "manual"]).join(", "))}
+          ${row("Auto reply", rules.auto_reply_enabled ? "enabled" : "disabled")}
+          ${row("Auto DM", rules.auto_dm_enabled ? "enabled" : "disabled")}
+          ${row("Auto comment", rules.auto_comment_enabled ? "enabled" : "disabled")}
+          ${row("Auto follow", rules.auto_follow_enabled ? "enabled" : "disabled")}
+          ${row("Required env present", (env.required_present || []).join(", ") || "-")}
+          ${row("Required env missing", (env.required_missing || []).join(", ") || "-")}
+          ${row("Optional env present", (env.optional_present || []).join(", ") || "-")}
+          ${row("Token policy", env.token_storage_policy || "Do not commit tokens.")}
+        </tbody>
+      </table>
+      <p class="muted">本区块只显示字段是否存在，不显示 token 或 secret 内容。查看页面不会调用 Meta API；CLI live test 命令才会调用 Graph API。</p>
+    </section>
+  `;
+}
+
+function renderMetaAccounts(title, accounts) {
+  return `
+    <section class="panel" style="margin-top:24px">
+      <h2>${escapeHtml(title)}</h2>
+      <table class="table">
+        <thead><tr><th>Account</th><th>Binding</th><th>Permissions</th><th>Status</th><th>Safety</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${accounts.map((account) => {
+            const binding = account.meta_binding || {};
+            const missing = getMissingMetaBindings(account);
+            const permissionStatus = getMetaPermissionStatus(account);
+            const tokenMissing = binding.token_status !== "configured";
+            return `
+              <tr>
+                <td><strong>${escapeHtml(account.display_name || account.account_name)}</strong><br><span class="muted">${escapeHtml(account.account_id)} · ${escapeHtml(account.platform)}</span><br><span class="muted">${escapeHtml(account.account_url || "")}</span></td>
+                <td>${renderMetaBinding(account, binding)}${missing.length ? `<div class="error">缺少：${escapeHtml(missing.join(", "))}</div>` : ""}</td>
+                <td>${(binding.permissions || []).map(tag).join("") || `<span class="muted">No permissions recorded</span>`}<br>${status(permissionStatus)}</td>
+                <td>${status(account.status)} ${status(account.auth_status)}<br>${status(binding.token_status || "not_configured")} ${status(binding.setup_status || "not_started")} ${tokenMissing ? status("missing_token") : ""}</td>
+                <td>${account.posting_enabled ? status("posting_on") : status("posting_off")} ${account.lead_tracking_enabled ? status("lead_tracking_on") : status("lead_tracking_off")}<br><span class="muted">${escapeHtml((binding.setup_notes || []).join(" | "))}</span></td>
+                <td>
+                  <button class="action-button" data-action="connectMetaAccount" data-account-id="${escapeHtml(account.account_id)}">授权绑定</button>
+                  <button class="action-button secondary" data-action="metaAccountCheck" data-account-id="${escapeHtml(account.account_id)}">检查账号准备度</button>
+                </td>
+              </tr>
+            `;
+          }).join("") || `<tr><td colspan="6" class="muted">当前客户还没有这类 Meta 账号。一个客户可以绑定多个账号。</td></tr>`}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function renderMetaDryRunSection(variants) {
+  return `
+    <section class="panel" style="margin-top:24px">
+      <div class="row-card-head">
+        <div>
+          <h2>Meta Dry-run Preview</h2>
+          <p class="muted">选择 Facebook/Instagram variant 生成 Graph API payload 预览。不会调用 Meta API，不会发帖。</p>
+        </div>
+        <label>
+          <span>Platform</span>
+          <select id="metaPlatformFilter">
+            ${[["all", "All"], ["facebook", "Facebook"], ["instagram", "Instagram"]].map(([value, label]) => `<option value="${value}" ${state.metaPlatformFilter === value ? "selected" : ""}>${label}</option>`).join("")}
+          </select>
+        </label>
+      </div>
+      <table class="table">
+        <thead><tr><th>Variant</th><th>Account</th><th>Status</th><th>Caption</th><th>Action</th></tr></thead>
+        <tbody>
+          ${variants.map((variant) => {
+            const account = (state.data.accounts || []).find((item) => item.account_id === variant.account_id);
+            return `
+              <tr>
+                <td><strong>${escapeHtml(variant.variant_id)}</strong><br><span class="muted">${escapeHtml(variant.platform)} · ${escapeHtml(variant.format)}</span></td>
+                <td>${escapeHtml(account?.display_name || variant.account_id)}<br><span class="muted">${escapeHtml(variant.account_id)}</span></td>
+                <td>${status(variant.status)} ${status(variant.approval_status)}</td>
+                <td>${escapeHtml(variant.caption)}</td>
+                <td><button class="action-button secondary" data-action="metaDryRun" data-variant-id="${escapeHtml(variant.variant_id)}">生成 Meta dry-run preview</button></td>
+              </tr>
+            `;
+          }).join("") || `<tr><td colspan="5" class="muted">没有 Facebook / Instagram variants。</td></tr>`}
+        </tbody>
+      </table>
+      <div class="detail-box">
+        <strong>Preview examples</strong>
+        <p class="muted">Facebook: Page text post, Page link post, Page photo post endpoint preview. Instagram: media container creation, media publish, image, reel/video placeholder, carousel placeholder preview.</p>
+      </div>
+    </section>
+  `;
+}
+
+function renderMetaCliLiveTestSection(facebookAccounts, instagramAccounts) {
+  const clientId = state.clientId;
+  const igAccount = instagramAccounts.find((account) => account.meta_binding?.token_status === "configured") || instagramAccounts[0];
+  const fbAccount = facebookAccounts.find((account) => account.meta_binding?.token_status === "configured") || facebookAccounts[0];
+  const igId = igAccount?.account_id || "ig_brand_001";
+  const fbId = fbAccount?.account_id || "facebook_brand_001";
+  return `
+    <section class="panel" style="margin-top:24px">
+      <div class="row-card-head">
+        <div>
+          <h2>Meta Real API CLI Test Console</h2>
+          <p class="muted">这些按钮会从 Web 后端直接调用 Meta Graph API。写入动作必须在 Confirm 字段输入 <code>LIVE</code>。</p>
+        </div>
+        <div class="tag-row">
+          ${status("cli_live_test")}
+          ${status("requires_confirm_live")}
+          ${status("web_live_disabled")}
+        </div>
+      </div>
+      <div class="meta-live-grid">
+        ${renderMetaLiveForm("Instagram", igId, [
+          ["ig_account_check", "检查账号", "read"],
+          ["ig_publish_image", "发布图片", "image"],
+          ["ig_publish_video", "发布 Reels/视频", "video"],
+          ["ig_comments_list", "查看评论", "comments"],
+          ["ig_comment_reply", "回复评论", "comment_reply"],
+          ["ig_private_reply", "私密回复", "private_reply"],
+          ["ig_dm_send", "发送 DM", "dm"],
+          ["ig_like", "点赞对象", "like"]
+        ])}
+        ${renderMetaLiveForm("Facebook", fbId, [
+          ["fb_account_check", "检查账号", "read"],
+          ["fb_publish_post", "发布文字", "text"],
+          ["fb_publish_photo", "发布图片", "image"],
+          ["fb_publish_video", "发布视频", "video"],
+          ["fb_comments_list", "查看评论", "comments"],
+          ["fb_comment_reply", "回复评论", "comment_reply"],
+          ["fb_private_reply", "私密回复", "private_reply"],
+          ["fb_dm_send", "发送 DM", "dm"],
+          ["fb_like", "点赞对象", "like"]
+        ])}
+      </div>
+      <div class="detail-box">
+        <strong>Known limits</strong>
+        <p class="muted">Instagram official Graph API does not expose follow/unfollow. Facebook Page automation also cannot follow users. DM/reply commands require the recipient/comment context allowed by Meta permissions and messaging windows.</p>
+      </div>
+    </section>
+  `;
+}
+
+function renderMetaLiveForm(title, accountId, actions) {
+  return `
+    <form class="meta-live-form tool-card" data-account-id="${escapeHtml(accountId)}">
+      <h3>${escapeHtml(title)} Live Buttons</h3>
+      <label><span>Account</span><input name="account_id" value="${escapeHtml(accountId)}" /></label>
+      <label><span>Action</span><select name="action">${actions.map(([value, label]) => `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`).join("")}</select></label>
+      <label><span>Caption / Message</span><textarea name="message" rows="3" placeholder="Caption, post text, comment reply, DM text"></textarea></label>
+      <label>
+        <span>Upload Local Media To R2</span>
+        <input name="media_file" type="file" accept="image/*,video/*" />
+      </label>
+      <button class="action-button secondary" type="button" data-action="uploadR2Media">上传到 R2 并回填 URL</button>
+      <label><span>Public Image URL</span><input name="image_url" placeholder="https://..." /></label>
+      <label><span>Public Video URL</span><input name="video_url" placeholder="https://...mp4" /></label>
+      <div class="two-column-form">
+        <label><span>Media ID</span><input name="media_id" placeholder="IG media id" /></label>
+        <label><span>Object ID</span><input name="object_id" placeholder="FB post/comment/media id" /></label>
+        <label><span>Comment ID</span><input name="comment_id" placeholder="comment id" /></label>
+        <label><span>Recipient ID</span><input name="recipient_id" placeholder="scoped recipient id" /></label>
+        <label><span>Link</span><input name="link" placeholder="optional link for FB post" /></label>
+        <label><span>Media Type</span><select name="media_type"><option value="REELS">REELS</option><option value="VIDEO">VIDEO</option><option value="STORIES">STORIES</option></select></label>
+      </div>
+      <label><span>Confirm For Writes</span><input name="confirm" placeholder="type LIVE for publish/reply/DM/like" /></label>
+      <button class="action-button danger" type="submit">执行真实 API 动作</button>
+    </form>
+  `;
+}
+
+function renderMetaManualWorkflow() {
+  const exports = state.data.meta?.manual_exports || {};
+  return `
+    <section class="panel" style="margin-top:24px">
+      <h2>Manual Workflow Status</h2>
+      <div class="summary-grid small-summary">
+        ${["facebook", "instagram"].map((platform) => {
+          const item = exports[platform] || {};
+          return `<div class="metric"><span>${escapeHtml(platform)} export folder</span><strong>${item.exists ? "exists" : "missing"}</strong></div>`;
+        }).join("")}
+      </div>
+      <table class="table compact-table">
+        <thead><tr><th>Platform</th><th>Folder</th><th>Latest files</th></tr></thead>
+        <tbody>
+          ${["facebook", "instagram"].map((platform) => {
+            const item = exports[platform] || {};
+            return `<tr><td>${escapeHtml(platform)}</td><td>${escapeHtml(item.path || "")}</td><td>${(item.latest_files || []).map(tag).join("") || `<span class="muted">No manual export files yet</span>`}</td></tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+      <h3>Manual Posting Checklist</h3>
+      <ol class="checklist">
+        <li>Confirm client.</li>
+        <li>Confirm platform account.</li>
+        <li>Copy caption from approved variant.</li>
+        <li>Upload asset manually.</li>
+        <li>Publish manually on Facebook / Instagram.</li>
+        <li>Paste post URL back into the system as a manual record.</li>
+      </ol>
+    </section>
+  `;
+}
+
+function renderMetaSopSection() {
+  return `
+    <section class="panel" style="margin-top:24px">
+      <h2>Meta SOP</h2>
+      <table class="table compact-table">
+        <tbody>
+          ${row("OpenClaw SOP", "docs/meta-platform-sop.md")}
+          ${row("Env template", "docs/meta-env-template.md")}
+          ${row("Foundation config", "data/meta-platform-foundation.json")}
+          ${row("Live test rule", "Web UI display/dry-run/manual only; real Meta API tests use CLI with --confirm LIVE")}
+          ${row("OpenClaw real API SOP", "docs/openclaw/meta-real-api-test-sop.md")}
+          ${row("Development log", "docs/development-log.md")}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function renderXPublishReview() {
+  const { contents, variants, queue, records, accounts } = state.data;
+  const xVariants = variants.filter((variant) => variant.platform === "x");
+  const xTasks = queue.filter((task) => task.platform === "x").sort((a, b) => String(a.scheduled_at).localeCompare(String(b.scheduled_at)));
+  const xRecords = records.filter((record) => record.platform === "x").slice().reverse();
+  const contentById = new Map(contents.map((item) => [item.content_id, item]));
+  const variantById = new Map(variants.map((item) => [item.variant_id, item]));
+  const accountById = new Map(accounts.map((item) => [item.account_id, item]));
+  const taskVariantIds = new Set(xTasks.map((task) => task.variant_id));
+  const unscheduled = xVariants.filter((variant) => !taskVariantIds.has(variant.variant_id));
+  return `
+    <section class="panel">
+      <div class="row-card-head">
+        <div>
+          <h2>X Publish Review</h2>
+          <p class="muted">这里只做 X 发布审核、dry-run 预览和人工完成记录。不会 live publish；真实发布仍只能通过 CLI 且必须 <code>--confirm LIVE</code>。</p>
+        </div>
+        <div class="tag-row">
+          ${status("manual_gated")}
+          ${status("no_live_publish")}
+        </div>
+      </div>
+      <div class="summary-grid small-summary">
+        <div class="metric"><span>X Variants</span><strong>${xVariants.length}</strong></div>
+        <div class="metric"><span>X Tasks</span><strong>${xTasks.length}</strong></div>
+        <div class="metric"><span>X Records</span><strong>${xRecords.length}</strong></div>
+        <div class="metric"><span>Unscheduled</span><strong>${unscheduled.length}</strong></div>
+      </div>
+
+      <h3>X Publish Queue</h3>
+      <table class="table">
+        <thead><tr><th>Content / Caption</th><th>Account</th><th>Schedule</th><th>Status</th><th>Readiness</th><th>Actions</th></tr></thead>
+        <tbody>
+          ${xTasks.map((task) => {
+            const variant = variantById.get(task.variant_id);
+            const content = contentById.get(task.content_id);
+            const account = accountById.get(task.account_id);
+            const ready = getXPublishReadiness(task, variant, content, account);
+            return `
+              <tr>
+                <td><strong>${escapeHtml(content?.title || task.content_id)}</strong><br><span class="muted">${escapeHtml(variant?.caption || "variant missing")}</span></td>
+                <td>${escapeHtml(account?.display_name || task.account_id)}<br><span class="muted">${escapeHtml(task.account_id)}</span></td>
+                <td>${escapeHtml(formatDateTime(task.scheduled_at))}<br><span class="muted">${escapeHtml(task.publish_method)}</span></td>
+                <td>${status(task.status)} ${status(task.approval_status)}</td>
+                <td>${ready.ok ? status("ready") : status("blocked")}<br><span class="muted">${escapeHtml(ready.reason)}</span>${task.blocked_reason ? `<br><span class="muted">task: ${escapeHtml(task.blocked_reason)}</span>` : ""}</td>
+                <td>
+                  <div class="table-actions">
+                    <button class="action-button secondary" data-action="xPublishPreview" data-task-id="${escapeHtml(task.publish_task_id)}">生成 dry-run 预览</button>
+                    <button class="action-button secondary" data-action="xManualComplete" data-task-id="${escapeHtml(task.publish_task_id)}">标记人工已发布</button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join("") || `<tr><td colspan="6" class="muted">还没有 X publish tasks。请先在发布队列里排期 platform=x 的 approved variant。</td></tr>`}
+        </tbody>
+      </table>
+
+      <h3>Approved X Variants</h3>
+      <table class="table compact-table">
+        <thead><tr><th>Variant</th><th>Content</th><th>Account</th><th>Status</th><th>Caption</th></tr></thead>
+        <tbody>
+          ${xVariants.map((variant) => {
+            const content = contentById.get(variant.content_id);
+            const account = accountById.get(variant.account_id);
+            return `<tr>
+              <td>${escapeHtml(variant.variant_id)}</td>
+              <td>${escapeHtml(content?.title || variant.content_id)}</td>
+              <td>${escapeHtml(account?.display_name || variant.account_id)}</td>
+              <td>${status(variant.status)} ${status(variant.approval_status)}</td>
+              <td>${escapeHtml(variant.caption)}</td>
+            </tr>`;
+          }).join("") || `<tr><td colspan="5" class="muted">还没有 X variants。</td></tr>`}
+        </tbody>
+      </table>
+
+      <h3>X Publish Records</h3>
+      <table class="table compact-table">
+        <thead><tr><th>Time</th><th>Mode</th><th>Account</th><th>Post</th><th>Task</th></tr></thead>
+        <tbody>
+          ${xRecords.map((record) => `<tr>
+            <td>${escapeHtml(formatDateTime(record.published_at))}</td>
+            <td>${status(record.publish_mode)}</td>
+            <td>${escapeHtml(record.account_id)}</td>
+            <td>${record.post_url ? `<a href="${escapeHtml(record.post_url)}" target="_blank">${escapeHtml(record.platform_post_id)}</a>` : escapeHtml(record.platform_post_id)}</td>
+            <td>${escapeHtml(record.publish_task_id)}</td>
+          </tr>`).join("") || `<tr><td colspan="5" class="muted">还没有 X publish records。</td></tr>`}
+        </tbody>
+      </table>
+    </section>
   `;
 }
 
@@ -932,6 +1642,7 @@ function renderXBudgetHistory(budget, history, usage, jsonErrors) {
         <div class="metric"><span>Remaining</span><strong>${escapeHtml(budgetRemaining)}</strong></div>
         <div class="metric"><span>Max / Command</span><strong>${escapeHtml(budget.max_cost_per_command ?? 0)}</strong></div>
       </div>
+      <p class="muted cost-note">所有 <strong>Cost / estimated_cost</strong> 均为内部估算单位，不代表 X API 官方账单金额。Estimate-only 模式可预览费用但不触发实际 API 调用。</p>
       <table class="table compact-table">
         <thead><tr><th>Time</th><th>Command</th><th>Mode</th><th>Cost</th><th>Result</th></tr></thead>
         <tbody>
@@ -1120,7 +1831,76 @@ function renderMetrics(summary) {
   return `<div class="summary-grid">${metrics.map(([label, value]) => `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`).join("")}</div>`;
 }
 
+function isActionableLead(lead) {
+  return !["converted", "not_interested", "spam"].includes(lead.lead_stage);
+}
+
+function uniqueBy(key) {
+  const seen = new Set();
+  return (item) => {
+    const value = item?.[key];
+    if (seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  };
+}
+
+function hasManualPackage(task) {
+  return getManualPackageState(task).status === "ready";
+}
+
+function getManualPackageState(task) {
+  const platformExports = state.data.operations?.manual_exports?.[task.platform];
+  if (!platformExports?.exists) {
+    return { status: "missing", label: "exports folder missing" };
+  }
+  const files = platformExports.latest_files || [];
+  const matched = files.find((file) => file.includes(task.variant_id));
+  if (matched) {
+    return { status: "ready", label: matched };
+  }
+  return { status: "missing", label: "no package for variant" };
+}
+
+function renderPublishActionNotice(rawLog) {
+  if (!rawLog) return "";
+  try {
+    const log = JSON.parse(rawLog);
+    if (log?.ok && log?.message) {
+      return `
+        <div class="success-box">
+          <strong>${escapeHtml(log.message)}</strong>
+          <p>平台：${escapeHtml(log.platform || "-")} · 账号：${escapeHtml(log.account_id || "-")} · Variant：${escapeHtml(log.variant_id || "-")}</p>
+          <table class="table compact-table">
+            <tbody>
+              ${row("Markdown 发布包", log.markdown_path || "-")}
+              ${row("JSON 发布包", log.json_path || "-")}
+              ${row("Publish Task", log.publish_task_id || "未绑定队列任务")}
+            </tbody>
+          </table>
+          <p class="muted">这是导出结果，不是报错。没有调用任何平台 API，也没有真实发布。</p>
+        </div>
+      `;
+    }
+  } catch {
+    return `<pre class="log-box">${escapeHtml(rawLog)}</pre>`;
+  }
+  return `<pre class="log-box">${escapeHtml(rawLog)}</pre>`;
+}
+
 function bindViewEvents() {
+  document.querySelectorAll("[data-action='gotoView']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.viewTarget;
+      if (!target) return;
+      state.view = target;
+      document.querySelectorAll(".nav-item").forEach((item) => {
+        item.classList.toggle("active", item.dataset.view === target);
+      });
+      render();
+    });
+  });
+
   document.querySelectorAll("[data-action='runPublish']").forEach((button) => {
     button.addEventListener("click", () => postJson("/api/publish/run", { client_id: state.clientId }));
   });
@@ -1152,6 +1932,34 @@ function bindViewEvents() {
   });
   document.querySelectorAll("[data-action='retryTask']").forEach((button) => {
     button.addEventListener("click", () => postJson("/api/publish/retry", { client_id: state.clientId, publish_task_id: button.dataset.taskId }));
+  });
+  document.querySelectorAll("[data-action='manualExportVariant']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/publish/manual-export", {
+      client_id: state.clientId,
+      variant_id: button.dataset.variantId
+    }));
+  });
+  document.querySelectorAll("[data-action='manualExportTask']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/publish/manual-export", {
+      client_id: state.clientId,
+      variant_id: button.dataset.variantId,
+      publish_task_id: button.dataset.taskId
+    }));
+  });
+  document.querySelectorAll("[data-action='manualCompleteTask']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const input = document.querySelector(`.manual-url-input[data-task-id="${cssEscape(button.dataset.taskId)}"]`);
+      const postUrl = input?.value?.trim();
+      if (!postUrl) {
+        alert("请先填写手动发布后的 post_url。");
+        return;
+      }
+      postJson("/api/publish/manual-complete", {
+        client_id: state.clientId,
+        publish_task_id: button.dataset.taskId,
+        post_url: postUrl
+      });
+    });
   });
   document.querySelectorAll("[data-action='scoreLeads']").forEach((button) => {
     button.addEventListener("click", () => postJson("/api/lead/score", { client_id: state.clientId }));
@@ -1246,10 +2054,92 @@ function bindViewEvents() {
     });
   }
 
+  const metaPlatformFilter = document.querySelector("#metaPlatformFilter");
+  if (metaPlatformFilter) {
+    metaPlatformFilter.addEventListener("change", (event) => {
+      state.metaPlatformFilter = event.target.value;
+      render();
+    });
+  }
+
+  document.querySelectorAll("[data-action='metaAccountCheck']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/meta/account/check", {
+      client_id: state.clientId,
+      account_id: button.dataset.accountId
+    }));
+  });
+
+  document.querySelectorAll("[data-action='metaDryRun']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/meta/publish/dry-run", {
+      client_id: state.clientId,
+      variant_id: button.dataset.variantId
+    }));
+  });
+
+  document.querySelectorAll(".meta-live-form").forEach((form) => {
+    form.querySelector("[data-action='uploadR2Media']")?.addEventListener("click", async () => {
+      const fileInput = form.querySelector("input[name='media_file']");
+      const file = fileInput?.files?.[0];
+      if (!file) {
+        alert("请选择一个本地图片或视频文件。");
+        return;
+      }
+      const upload = await uploadMediaToR2(form, file);
+      const target = file.type.startsWith("video/") ? form.querySelector("input[name='video_url']") : form.querySelector("input[name='image_url']");
+      if (target) target.value = upload.url;
+      alert(`上传完成：${upload.url}`);
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const action = String(data.get("action") || "");
+      const isWrite = !action.endsWith("_account_check") && !action.endsWith("_comments_list");
+      if (isWrite && String(data.get("confirm") || "") !== "LIVE") {
+        alert("真实写入动作必须在 Confirm 字段输入 LIVE。");
+        return;
+      }
+      if (isWrite && !window.confirm("确认要调用真实 Meta API 执行写入动作？")) return;
+      await postJson("/api/meta/live-action", {
+        client_id: state.clientId,
+        account_id: String(data.get("account_id") || form.dataset.accountId || ""),
+        action,
+        confirm: String(data.get("confirm") || ""),
+        caption: String(data.get("message") || ""),
+        message: String(data.get("message") || ""),
+        image_url: String(data.get("image_url") || ""),
+        video_url: String(data.get("video_url") || ""),
+        media_id: String(data.get("media_id") || ""),
+        object_id: String(data.get("object_id") || ""),
+        comment_id: String(data.get("comment_id") || ""),
+        recipient_id: String(data.get("recipient_id") || ""),
+        link: String(data.get("link") || ""),
+        media_type: String(data.get("media_type") || "REELS")
+      });
+    });
+  });
+
   document.querySelectorAll("[data-action='xTab']").forEach((button) => {
     button.addEventListener("click", () => {
       state.xTab = button.dataset.tab;
       render();
+    });
+  });
+
+  document.querySelectorAll("[data-action='xPublishPreview']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/publish/dry-run-preview", {
+      client_id: state.clientId,
+      publish_task_id: button.dataset.taskId
+    }));
+  });
+  document.querySelectorAll("[data-action='xManualComplete']").forEach((button) => {
+    button.addEventListener("click", () => {
+      const confirmed = window.confirm("这只会把本地 JSON 任务标记为人工已发布，不会调用 X API。确认继续？");
+      if (!confirmed) return;
+      postJson("/api/x/publish/manual-complete", {
+        client_id: state.clientId,
+        publish_task_id: button.dataset.taskId
+      });
     });
   });
 
@@ -1514,15 +2404,20 @@ function bindViewEvents() {
 
   const accountForm = document.querySelector("#accountForm");
   if (accountForm) {
+    accountForm.platform.addEventListener("change", () => updateAccountBindingFields(accountForm));
+    updateAccountBindingFields(accountForm);
     accountForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = new FormData(accountForm);
       const accountId = String(form.get("account_id") || "").trim();
       const overrideText = String(form.get("capability_override") || "").trim();
+      const xBindingText = String(form.get("x_binding") || "").trim();
+      const metaBindingText = String(form.get("meta_binding") || "").trim();
+      const platform = String(form.get("platform") || "instagram");
       const payload = {
         client_id: state.clientId,
         account_id: accountId || undefined,
-        platform: String(form.get("platform") || "instagram"),
+        platform,
         account_name: String(form.get("account_name") || "").trim(),
         display_name: String(form.get("display_name") || "").trim(),
         account_url: String(form.get("account_url") || "").trim() || null,
@@ -1535,7 +2430,9 @@ function bindViewEvents() {
         auth_status: String(form.get("auth_status") || "mock"),
         status: String(form.get("status") || "active"),
         notes: String(form.get("notes") || "").trim(),
-        capability_override: overrideText ? JSON.parse(overrideText) : {}
+        capability_override: overrideText ? JSON.parse(overrideText) : {},
+        x_binding: platform === "x" && xBindingText ? JSON.parse(xBindingText) : undefined,
+        meta_binding: ["facebook", "instagram"].includes(platform) && metaBindingText ? JSON.parse(metaBindingText) : undefined
       };
       await postJson(accountId ? "/api/account/update" : "/api/account/create", payload);
     });
@@ -1560,9 +2457,39 @@ function bindViewEvents() {
       value: button.dataset.value === "true"
     }));
   });
+  document.querySelectorAll("[data-action='checkXAccount']").forEach((button) => {
+    button.addEventListener("click", () => postJson("/api/x/account/check", {
+      client_id: state.clientId,
+      account_id: button.dataset.accountId
+    }));
+  });
+  document.querySelectorAll("[data-action='connectXAccount']").forEach((button) => {
+    button.addEventListener("click", () => {
+      window.location.href = `/auth/x/start?client_id=${encodeURIComponent(state.clientId)}&account_id=${encodeURIComponent(button.dataset.accountId)}`;
+    });
+  });
+  document.querySelectorAll("[data-action='connectMetaAccount']").forEach((button) => {
+    button.addEventListener("click", () => {
+      window.location.href = `/auth/meta/start?client_id=${encodeURIComponent(state.clientId)}&account_id=${encodeURIComponent(button.dataset.accountId)}`;
+    });
+  });
   document.querySelectorAll("[data-action='resetAccountForm']").forEach((button) => {
     button.addEventListener("click", () => resetAccountForm());
   });
+}
+
+async function uploadMediaToR2(form, file) {
+  const data = new FormData();
+  data.set("client_id", state.clientId);
+  data.set("platform", String(form.querySelector("select[name='action']")?.value || "meta").split("_")[0]);
+  data.set("file", file);
+  const res = await fetch("/api/media/r2-upload", {
+    method: "POST",
+    body: data
+  });
+  const payload = await res.json();
+  if (!res.ok) throw new Error(payload.error || "R2 上传失败");
+  return payload;
 }
 
 function updateClientOptions(clients) {
@@ -1620,6 +2547,64 @@ function fromLocalDateTime(value) {
   return new Date(value).toISOString();
 }
 
+function safeDateKey(value) {
+  return value ? String(value) : "9999-12-31T23:59:59.999Z";
+}
+
+function getXPublishReadiness(task, variant, content, account) {
+  if (!content) return { ok: false, reason: "content missing" };
+  if (content.status !== "approved" || !content.approved_by_human) return { ok: false, reason: "content not approved" };
+  if (!variant) return { ok: false, reason: "variant missing" };
+  if (variant.status !== "approved" || variant.approval_status !== "approved") return { ok: false, reason: "variant not approved" };
+  if (!account) return { ok: false, reason: "account missing" };
+  if (account.platform !== "x") return { ok: false, reason: "account is not X" };
+  if (account.status !== "active") return { ok: false, reason: "account inactive" };
+  if (!account.posting_enabled) return { ok: false, reason: "posting disabled" };
+  if (task.status === "cancelled") return { ok: false, reason: "task cancelled" };
+  if (task.status === "blocked") return { ok: false, reason: task.blocked_reason || "task blocked" };
+  if (task.status === "published") return { ok: true, reason: "already published / recorded" };
+  if (task.approval_status !== "approved") return { ok: false, reason: "task approval missing" };
+  if (task.publish_method === "official_api" && account.auth_status !== "connected") return { ok: false, reason: "official API requires connected auth" };
+  return { ok: true, reason: "ready for dry-run preview / manual workflow" };
+}
+
+function getMissingMetaBindings(account) {
+  const binding = account.meta_binding || {};
+  const requiredBindings = account.platform === "facebook"
+    ? ["page_id", "page_name"]
+    : account.platform === "instagram"
+      ? ["instagram_business_account_id", "instagram_username", "connected_facebook_page_id"]
+      : [];
+  const missing = requiredBindings.filter((field) => !binding[field]);
+  if ((binding.permissions || []).length === 0) missing.push("permissions");
+  if (binding.token_status !== "configured") missing.push("token");
+  return missing;
+}
+
+function getMetaPermissionStatus(account) {
+  const permissions = account.meta_binding?.permissions || [];
+  const required = account.platform === "facebook"
+    ? ["pages_show_list", "pages_read_engagement", "pages_manage_posts", "pages_manage_metadata"]
+    : ["instagram_basic", "instagram_content_publish", "instagram_manage_comments", "pages_show_list", "pages_read_engagement"];
+  return required.every((permission) => permissions.includes(permission)) ? "permissions_ready" : "missing_permissions";
+}
+
+function renderMetaBinding(account, binding) {
+  if (account.platform === "facebook") {
+    return `
+      <div><strong>Page ID:</strong> ${escapeHtml(binding.page_id || "-")}</div>
+      <div><strong>Page:</strong> ${escapeHtml(binding.page_name || "-")}</div>
+      <div><strong>Business:</strong> ${escapeHtml(binding.business_id || "-")}</div>
+    `;
+  }
+  return `
+    <div><strong>IG User ID:</strong> ${escapeHtml(binding.instagram_business_account_id || "-")}</div>
+    <div><strong>Username:</strong> ${escapeHtml(binding.instagram_username || "-")}</div>
+    <div><strong>Connected Page:</strong> ${escapeHtml(binding.connected_facebook_page_id || "-")}</div>
+    <div><strong>Page Name:</strong> ${escapeHtml(binding.connected_facebook_page_name || binding.page_name || "-")}</div>
+  `;
+}
+
 function cssEscape(value) {
   return String(value || "").replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
@@ -1643,6 +2628,9 @@ function fillAccountForm(accountId) {
   form.lead_tracking_enabled.checked = Boolean(account.lead_tracking_enabled);
   form.notes.value = account.notes || "";
   form.capability_override.value = formatCapabilityOverride(account.capability_override);
+  form.x_binding.value = formatCapabilityOverride(account.x_binding);
+  form.meta_binding.value = formatCapabilityOverride(account.meta_binding);
+  updateAccountBindingFields(form);
   form.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -1656,6 +2644,19 @@ function resetAccountForm() {
   form.posting_enabled.checked = true;
   form.lead_tracking_enabled.checked = true;
   form.capability_override.value = "";
+  form.x_binding.value = "";
+  form.meta_binding.value = "";
+  updateAccountBindingFields(form);
+}
+
+function updateAccountBindingFields(form) {
+  const platform = form.platform?.value;
+  form.querySelectorAll(".binding-field-x").forEach((field) => {
+    field.style.display = platform === "x" ? "" : "none";
+  });
+  form.querySelectorAll(".binding-field-meta").forEach((field) => {
+    field.style.display = ["facebook", "instagram"].includes(platform) ? "" : "none";
+  });
 }
 
 function bindValueToState(selector, key) {

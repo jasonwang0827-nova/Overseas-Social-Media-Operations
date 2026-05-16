@@ -1,0 +1,90 @@
+{
+  "phase": "phase_1_meta_cli_live_test",
+  "graph_api_version": "v25.0",
+  "safety_rules": {
+    "real_publish_enabled": true,
+    "auto_reply_enabled": false,
+    "auto_dm_enabled": false,
+    "auto_comment_enabled": false,
+    "auto_follow_enabled": false,
+    "web_ui_live_publish_enabled": false,
+    "allowed_modes": ["mock", "dry_run", "manual", "cli_live_test"]
+  },
+  "shared_meta_auth": {
+    "env_file": "MetaAPI.env",
+    "required_env_vars": [
+      "META_APP_ID",
+      "META_APP_SECRET",
+      "META_ACCESS_TOKEN",
+      "META_BUSINESS_ID",
+      "META_FACEBOOK_PAGE_ID",
+      "META_INSTAGRAM_BUSINESS_ACCOUNT_ID"
+    ],
+    "optional_env_vars": [
+      "META_REDIRECT_URI",
+      "META_GRAPH_API_VERSION",
+      "META_USER_ACCESS_TOKEN",
+      "META_PAGE_ACCESS_TOKEN",
+      "META_PAGE_ID",
+      "META_IG_USER_ID",
+      "META_BUSINESS_ID"
+    ],
+    "token_storage_policy": "Do not commit MetaAPI.env or any token file. Use env vars or local ignored files only."
+  },
+  "facebook": {
+    "account_type": "facebook_page",
+    "required_account_binding": [
+      "page_id",
+      "page_name"
+    ],
+    "recommended_permissions": [
+      "pages_show_list",
+      "pages_read_engagement",
+      "pages_manage_posts",
+      "pages_manage_metadata"
+    ],
+    "phase_1_workflows": [
+      "mock publish",
+      "dry-run publish preview",
+      "manual completion record",
+      "manual comment import",
+      "CLI live Page post/photo/video test",
+      "CLI live comment reply/private reply/DM/like test"
+    ],
+    "reserved_later_workflows": [
+      "insights via API",
+      "webhooks",
+      "Web UI live publish"
+    ],
+    "notes": "Facebook Page has gated CLI live-test commands. Web UI remains display, dry-run, and manual workflow only."
+  },
+  "instagram": {
+    "account_type": "instagram_professional",
+    "required_account_binding": [
+      "instagram_business_account_id",
+      "instagram_username",
+      "connected_facebook_page_id"
+    ],
+    "recommended_permissions": [
+      "instagram_basic",
+      "instagram_content_publish",
+      "instagram_manage_comments",
+      "pages_show_list",
+      "pages_read_engagement"
+    ],
+    "phase_1_workflows": [
+      "mock publish",
+      "dry-run media container preview",
+      "manual completion record",
+      "manual comment import",
+      "CLI live image/Reels/video publish test",
+      "CLI live comment reply/private reply/DM/like test"
+    ],
+    "reserved_later_workflows": [
+      "insights via API",
+      "webhooks",
+      "Web UI live publish"
+    ],
+    "notes": "Instagram has gated CLI live-test commands for professional accounts connected to a Facebook Page. Web UI remains display, dry-run, and manual workflow only."
+  }
+}

@@ -255,6 +255,147 @@ input {
   padding: 18px;
 }
 
+.demo-panel {
+  margin-bottom: 24px;
+}
+
+.demo-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.demo-stage {
+  min-height: 128px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.demo-stage:hover {
+  border-color: #94a3b8;
+  background: #ffffff;
+}
+
+.demo-stage span,
+.demo-stage small {
+  display: block;
+}
+
+.demo-stage span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.demo-stage strong {
+  display: block;
+  margin: 8px 0;
+  color: var(--ink);
+  font-size: 20px;
+}
+
+.demo-stage small {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.demo-stage.ready {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.demo-stage.review {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+
+.demo-stage.blocked {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.demo-script {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+}
+
+.operator-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.operator-summary {
+  margin-bottom: 24px;
+}
+
+.operator-alert-list {
+  display: grid;
+  gap: 10px;
+}
+
+.operator-task-panel {
+  grid-column: 1 / -1;
+  overflow-x: auto;
+}
+
+.operator-task-panel .table {
+  min-width: 920px;
+}
+
+.operator-alert {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.operator-alert p {
+  margin: 6px 0 10px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.operator-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.check-item input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
 .panel-grid {
   grid-template-columns: minmax(320px, 1.1fr) minmax(320px, 0.9fr);
 }
@@ -508,6 +649,23 @@ input {
   min-width: 320px;
 }
 
+.mode-hint {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.cost-note {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .x-kol-notes {
   width: 100%;
   min-height: 64px;
@@ -522,6 +680,45 @@ input {
 
 .detail-box {
   margin-top: 12px;
+}
+
+.meta-live-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.meta-live-form {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.meta-live-form h3 {
+  margin: 0;
+}
+
+.meta-live-form label,
+.two-column-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.meta-live-form label span,
+.two-column-form label span {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.two-column-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .detail-box summary {
@@ -618,6 +815,19 @@ textarea {
   color: var(--red);
 }
 
+.success-box {
+  margin: 14px 0;
+  padding: 14px;
+  border: 1px solid #86efac;
+  border-radius: 8px;
+  background: #f0fdf4;
+  color: #14532d;
+}
+
+.success-box p {
+  margin: 8px 0;
+}
+
 @media (max-width: 1100px) {
   body {
     grid-template-columns: 1fr;
@@ -628,10 +838,13 @@ textarea {
   }
 
   .summary-grid,
+  .demo-stage-grid,
   .account-grid,
   .content-grid,
   .lead-grid,
+  .operator-checklist,
   .client-form,
+  .meta-live-grid,
   .panel-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -659,12 +872,20 @@ textarea {
   }
 
   .summary-grid,
+  .demo-stage-grid,
   .account-grid,
   .content-grid,
   .lead-grid,
+  .operator-checklist,
   .client-form,
+  .meta-live-grid,
+  .two-column-form,
   .panel-grid {
     grid-template-columns: 1fr;
+  }
+
+  .operator-hero {
+    display: block;
   }
 
   .client-form .wide,

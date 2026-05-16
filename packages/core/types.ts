@@ -95,9 +95,41 @@ export interface PlatformAccount {
   status: AccountStatus;
   capability_override?: Partial<PlatformCapabilities>;
   automation_settings?: PlatformAutomationSettings;
+  meta_binding?: MetaAccountBinding;
+  x_binding?: XAccountBinding;
   notes: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface XAccountBinding {
+  x_user_id?: string;
+  x_username?: string;
+  token_ref?: string;
+  token_status?: "not_configured" | "configured" | "expired" | "revoked" | "unknown";
+  scopes?: string[];
+  oauth_version?: "1.0a" | "2.0";
+  last_checked_at?: string;
+  setup_status?: "not_started" | "needs_x_oauth" | "ready_for_read" | "ready_for_write" | "ready_for_manual";
+  setup_notes?: string[];
+}
+
+export interface MetaAccountBinding {
+  meta_app_id?: string;
+  business_id?: string;
+  page_id?: string;
+  page_name?: string;
+  instagram_business_account_id?: string;
+  instagram_username?: string;
+  connected_facebook_page_id?: string;
+  connected_facebook_page_name?: string;
+  token_ref?: string;
+  token_env_var?: string;
+  permissions?: string[];
+  token_status?: "not_configured" | "configured" | "expired" | "needs_review" | "unknown";
+  setup_status?: "not_started" | "needs_meta_setup" | "ready_for_mock" | "ready_for_dry_run" | "ready_for_manual" | "ready_for_api_later" | "ready_for_api";
+  last_checked_at?: string;
+  setup_notes?: string[];
 }
 
 export interface PlatformAutomationSettings {
@@ -217,6 +249,41 @@ export interface PublishRecord {
   post_url?: string | null;
 }
 
+export interface PublishAuditEntry {
+  audit_id: string;
+  timestamp: string;
+  event_type:
+    | "dry_run_preview"
+    | "meta_dry_run_preview"
+    | "manual_export_created"
+    | "manual_completed"
+    | "publish_attempt"
+    | "publish_success"
+    | "publish_failed"
+    | "publish_blocked"
+    | "automation_attempt"
+    | "automation_success"
+    | "automation_failed"
+    | "automation_blocked";
+  client_id: string;
+  publish_task_id: string | null;
+  content_id: string | null;
+  variant_id: string | null;
+  platform: Platform | "meta";
+  account_id: string | null;
+  publish_method: PublishTask["publish_method"] | "dry_run" | "manual" | null;
+  publish_mode: PublishRecord["publish_mode"] | "dry_run" | "manual" | null;
+  status_before?: Status | null;
+  status_after?: Status | null;
+  platform_post_id?: string | null;
+  post_url?: string | null;
+  message: string;
+  reason?: string | null;
+  actor: "system" | "operator" | "openclaw" | "cli";
+  source: "web" | "cli" | "worker";
+  metadata?: Record<string, unknown>;
+}
+
 export interface Lead {
   lead_id: string;
   client_id: string;
@@ -281,6 +348,37 @@ export interface XResearchPost {
   created_at?: string;
   saved_at: string;
   research_status: AutomationActionStatus;
+}
+
+export interface XMediaAttachment {
+  media_key: string;
+  type: "photo" | "video" | "animated_gif" | string;
+  url?: string;
+  preview_image_url?: string;
+  duration_ms?: number;
+  public_metrics?: XPublicMetrics;
+}
+
+export interface XMediaPost {
+  media_post_id: string;
+  client_id: string;
+  source_username: string;
+  source_user_id: string;
+  post_id: string;
+  text: string;
+  post_url: string;
+  created_at?: string;
+  public_metrics: XPublicMetrics;
+  possibly_sensitive?: boolean;
+  media: XMediaAttachment[];
+  has_photo: boolean;
+  has_video: boolean;
+  has_video_under_limit: boolean;
+  max_video_seconds: number;
+  selected_for_client: boolean;
+  review_status: AutomationActionStatus;
+  saved_at: string;
+  updated_at: string;
 }
 
 export interface XQueryHistoryEntry {
@@ -348,6 +446,31 @@ export interface XLeadCandidate {
   candidate_status: AutomationActionStatus;
   recommended_reply: string;
   saved_at: string;
+  updated_at: string;
+}
+
+
+export interface XFollowAction {
+  follow_action_id: string;
+  client_id: string;
+  platform: "x";
+  account_id: string;
+  source_type: "kol_prospect" | "lead_candidate" | "manual";
+  source_id: string | null;
+  target_user_id: string;
+  target_username: string;
+  target_display_name: string | null;
+  target_profile_url: string;
+  approval_status: AutomationActionStatus;
+  status: "suggested" | "blocked" | "completed" | "failed" | "mock_completed";
+  mode: "mock" | "api";
+  confirmed_live: boolean;
+  blocked_reason: string | null;
+  error_message: string | null;
+  x_following: boolean | null;
+  requested_at: string;
+  completed_at: string | null;
+  created_at: string;
   updated_at: string;
 }
 
